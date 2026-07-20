@@ -82,6 +82,12 @@ export default function GradingModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    console.log("GradingModal submitting grades:", {
+      leadership,
+      problemSolving,
+      communication,
+      essay: essayScore,
+    }, "notes:", notes);
     onSubmitGrade(
       applicant.id,
       {
@@ -265,8 +271,22 @@ export default function GradingModal({
                 </span>
               </div>
               {/* Essay Content Area */}
-              <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50 dark:bg-slate-950/20 shadow-inner">
-                {getMockEssay(applicant.name, applicant.cohort)}
+              <div className="flex-1 overflow-y-auto p-6 bg-slate-55/50 dark:bg-slate-950/20 shadow-inner">
+                {applicant.shortAnswer ? (
+                  <div className="prose prose-sm prose-slate dark:prose-invert max-w-none">
+                    <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-1">
+                      Application Question: Tell me about yourself.
+                    </h3>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 italic mt-0 mb-3">
+                      Word Count: {applicant.shortAnswer.split(/\s+/).filter(Boolean).length} words
+                    </p>
+                    <div className="rounded-xl border border-slate-200/60 dark:border-slate-800 bg-white/70 dark:bg-slate-950/40 p-4 text-xs leading-relaxed text-slate-700 dark:text-slate-300 italic shadow-sm whitespace-pre-wrap">
+                      "{applicant.shortAnswer}"
+                    </div>
+                  </div>
+                ) : (
+                  getMockEssay(applicant.name, applicant.cohort)
+                )}
               </div>
             </div>
 

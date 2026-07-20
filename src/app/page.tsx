@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 
 import StatCard from "@/components/StatCard";
-import ApplicantCard, { Applicant } from "@/components/ApplicantCard";
+import ApplicantCard, { Applicant, InterviewComment } from "@/components/ApplicantCard";
 import GradingModal from "@/components/GradingModal";
 import CandidateProfileModal from "@/components/CandidateProfileModal";
 
@@ -297,8 +297,13 @@ export default function Dashboard() {
   // Authentication & Sandbox states
   const [session, setSession] = useState<any>(null);
   const [loadingAuth, setLoadingAuth] = useState<boolean>(true);
-  const [isSandbox, setIsSandbox] = useState<boolean>(true);
+  const isSandbox = false;
+  const setIsSandbox = (val: boolean) => {};
+  const [profileName, setProfileName] = useState<string>("Auth User");
+  const [dbProfiles, setDbProfiles] = useState<any[]>([]);
   const [emailInput, setEmailInput] = useState<string>(" ");
+  const [password, setPassword] = useState<string>("");
+  const [showPasswordLogin, setShowPasswordLogin] = useState<boolean>(true);
 
   // State to switch active grader view (John Doe, Jane Smith, Alex Chen)
   const [activeGraderId, setActiveGraderId] = useState<string>("g1");
@@ -312,9 +317,9 @@ export default function Dashboard() {
 
   // Check if real Supabase keys are configured in local environment
   const hasSupabaseKeys = useMemo(() => {
-    return (
+    return !!(
       process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
+      (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) &&
       !process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder")
     );
   }, []);
@@ -322,12 +327,9 @@ export default function Dashboard() {
   // Listen for Supabase Authentication State changes
   useEffect(() => {
     if (!hasSupabaseKeys) {
-      setIsSandbox(true);
       setLoadingAuth(false);
       return;
     }
-
-    setIsSandbox(false);
 
     // Get current session
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -347,11 +349,209 @@ export default function Dashboard() {
         fetchUserRole(session.user.id);
       } else {
         setUserRole("GRADER");
+        setProfileName("Auth User");
       }
     });
 
     return () => subscription.unsubscribe();
   }, [hasSupabaseKeys]);
+
+  // Synchronize and load applicants list from Supabase if keys are configured
+  useEffect(() => {
+    if (!hasSupabaseKeys || !session) return;
+
+    const fetchApplicantsFromSupabase = async () => {
+      try {
+        const loggedInName = profileName !== "Auth User" ? profileName : (session?.user?.email?.split("@")[0] || "Auth User");
+        // 1. Fetch all applicants from DB
+        const { data: dbApplicants, error: appError } = await supabase
+          .from("applicants")
+          .select("*");
+
+        if (appError) throw appError;
+
+        // 2. Fetch all assignments, joining profile names and evaluation scores
+        const { data: dbAssignments, error: assignError } = await supabase
+          .from("assignments")
+          .select(`
+            id,
+            applicant_id,
+            grader_id,
+            status,
+            profiles (
+              name
+            ),
+            evaluations (
+              leadership_score,
+              problem_solving_score,
+              communication_score,
+              essay_score,
+              notes,
+              created_at
+            )
+          `);
+
+        if (assignError) throw assignError;
+
+        // Fetch all profiles to see who is registered as a grader
+        const { data: profilesList } = await supabase
+          .from("profiles")
+          .select("id, name, role");
+
+        if (profilesList) {
+          setDbProfiles(profilesList);
+        }
+
+        // 3. Auto-seed 15 applicants if the database is empty
+        if (!dbApplicants || dbApplicants.length === 0) {
+          console.log("Supabase applicants table is empty, auto-seeding 15 candidates...");
+          
+          const seedApplicants = INITIAL_APPLICANTS.map((app) => ({
+            name: app.name,
+            email: app.email,
+            cohort: app.cohort,
+            status: app.status,
+          }));
+
+          const { data: insertedApps, error: insertError } = await supabase
+            .from("applicants")
+            .insert(seedApplicants)
+            .select();
+
+          if (insertError) throw insertError;
+
+          const defaultGraders: Record<string, string> = {
+            "Sarah Jenkins": "John Doe",
+            "Jessica Wang": "Jane Smith",
+            "David Kim": "Jane Smith",
+            "Michael Brown": "John Doe",
+            "Emily Davis": "Jane Smith",
+            "Ryan Patel": "Alex Chen",
+            "Grace Lee": "Marcus Vance",
+            "James Wilson": "John Doe",
+            "Sophia Martinez": "Jane Smith",
+            "Ashley Taylor": "Emily Taylor",
+            "Daniel Anderson": "Alex Chen",
+            "Olivia Thomas": "Marcus Vance",
+            "William Jackson": "Emily Taylor",
+            "Sophia White": "Alex Chen",
+            "Matthew Harris": "Emily Taylor",
+          };
+
+          const assignmentsToInsert = [];
+          if (insertedApps) {
+            if (profilesList && profilesList.length > 0) {
+              let pIdx = 0;
+              for (const app of insertedApps) {
+                const desiredGraderName = defaultGraders[app.name];
+                const grader = profilesList.find((p) => p.name === desiredGraderName) || profilesList[pIdx % profilesList.length];
+                assignmentsToInsert.push({
+                  applicant_id: app.id,
+                  grader_id: grader.id,
+                  status: "assigned",
+                });
+                pIdx++;
+              }
+            } else {
+              for (const app of insertedApps) {
+                assignmentsToInsert.push({
+                  applicant_id: app.id,
+                  grader_id: session.user.id,
+                  status: "assigned",
+                });
+              }
+            }
+
+            const { error: assignInsertError } = await supabase
+              .from("assignments")
+              .insert(assignmentsToInsert);
+
+            if (assignInsertError) throw assignInsertError;
+          }
+
+          showToast("Successfully seeded 15 candidates in Supabase!", "success");
+          window.location.reload();
+          return;
+        }
+
+        // Map assignments by applicant_id
+        const assignmentMap: Record<string, any> = {};
+        if (dbAssignments) {
+          for (const ass of dbAssignments) {
+            assignmentMap[ass.applicant_id] = ass;
+          }
+        }
+
+        // 4. Map DB applicants to React state
+        const mapped: Applicant[] = dbApplicants.map((app) => {
+          const ass = assignmentMap[app.id];
+          const val = ass?.evaluations ? (Array.isArray(ass.evaluations) ? ass.evaluations[0] : ass.evaluations) : undefined;
+          if (val) {
+            console.log(`Loaded evaluation for applicant "${app.name}":`, val);
+          }
+          
+          const grades = val ? {
+            leadership: Number(val.leadership_score),
+            problemSolving: Number(val.problem_solving_score),
+            communication: Number(val.communication_score),
+            essay: val.essay_score ? Number(val.essay_score) : undefined,
+          } : undefined;
+
+          const totalScore = grades ? (grades.leadership + grades.problemSolving + grades.communication + (grades.essay || 0)) : undefined;
+
+          // Normalize cohort names from DB to match UI filters
+          let normalizedCohort = app.cohort;
+          if (app.cohort && app.cohort.toLowerCase().startsWith("manage")) {
+            normalizedCohort = "Management Consulting";
+          } else if (app.cohort && app.cohort.toLowerCase().startsWith("health")) {
+            normalizedCohort = "Healthcare Consulting";
+          }
+
+          const comments: InterviewComment[] = [];
+          if (val && val.notes) {
+            comments.push({
+              id: `eval-notes-${app.id}`,
+              author: ass?.profiles?.name || "Assigned Grader",
+              text: val.notes,
+              timestamp: val.created_at ? new Date(val.created_at).toLocaleString([], {
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+              }) : new Date().toLocaleString(),
+            });
+          }
+
+          return {
+            id: app.id,
+            name: app.name,
+            email: app.email,
+            hashId: app.id.slice(0, 6),
+            submissionDate: app.created_at ? app.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
+            cohort: normalizedCohort,
+            status: app.status,
+            score: totalScore !== undefined ? parseFloat(totalScore.toFixed(1)) : undefined,
+            grades,
+            hasResume: true,
+            assignedGraderName: ass?.profiles?.name || (session && ass?.grader_id === session.user.id ? loggedInName : undefined) || "Assigned Grader",
+            scheduledTime: normalizedCohort.includes("Health") ? "10:30 AM" : "09:00 AM",
+            interviewComments: comments,
+            shortAnswer: app.short_answer || undefined,
+          };
+        });
+
+        // Update local React state with DB entries
+        setApplicants(mapped);
+
+      } catch (err: any) {
+        console.error("Error fetching applicants from Supabase:", err);
+        showToast(`Failed to load data from Supabase: ${err.message}`, "error");
+      }
+    };
+
+    fetchApplicantsFromSupabase();
+  }, [hasSupabaseKeys, session]);
 
   // Fetch Grader/Admin role from profiles table inside Supabase
   const fetchUserRole = async (userId: string) => {
@@ -365,6 +565,7 @@ export default function Dashboard() {
       if (error) throw error;
       if (data) {
         setUserRole(data.role as any);
+        setProfileName(data.name);
         showToast(`Authenticated as ${data.name} (${data.role})`, "success");
       }
     } catch (err: any) {
@@ -372,22 +573,30 @@ export default function Dashboard() {
     }
   };
 
-  // Sign In using Magic Link
+  // Sign In using email/password or magic link
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!emailInput.trim()) return;
     setLoadingAuth(true);
 
     try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email: emailInput.trim(),
-        options: {
-          emailRedirectTo: window.location.origin,
-        },
-      });
-
-      if (error) throw error;
-      showToast("Magic Link sent! Check your inbox.", "success");
+      if (showPasswordLogin) {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: emailInput.trim(),
+          password: password,
+        });
+        if (error) throw error;
+        showToast("Signed in successfully!", "success");
+      } else {
+        const { error } = await supabase.auth.signInWithOtp({
+          email: emailInput.trim(),
+          options: {
+            emailRedirectTo: window.location.origin,
+          },
+        });
+        if (error) throw error;
+        showToast("Magic Link sent! Check your inbox.", "success");
+      }
     } catch (err: any) {
       showToast(`Auth Error: ${err.message}`, "error");
     } finally {
@@ -415,21 +624,31 @@ export default function Dashboard() {
 
   // Track the logged in user context
   const currentUser = useMemo(() => {
-    if (isSandbox) {
-      return userRole === "ADMIN"
-        ? INITIAL_GRADERS.find((g) => g.role === "ADMIN")!
-        : INITIAL_GRADERS.find((g) => g.id === activeGraderId)!;
+    const name = profileName !== "Auth User" ? profileName : (session?.user?.email?.split("@")[0] || "Auth User");
+    const email = session?.user?.email || "auth@bruinstrategy.org";
+    const id = session?.user?.id || "g-user";
+    
+    let activeName = name;
+    let activeEmail = email;
+    let activeId = id;
+    
+    if (userRole === "GRADER") {
+      const selectedGrader = INITIAL_GRADERS.find((g) => g.id === activeGraderId);
+      if (selectedGrader) {
+        activeName = selectedGrader.name;
+        activeEmail = selectedGrader.email;
+        activeId = selectedGrader.id;
+      }
     }
     
-    // If live session exists, extract user email
     return {
-      id: session?.user?.id || "g-user",
-      name: session?.user?.email?.split("@")[0] || "Auth User",
-      email: session?.user?.email || "auth@bruinstrategy.org",
+      id: activeId,
+      name: activeName,
+      email: activeEmail,
       role: userRole,
-      avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${session?.user?.email || "User"}`,
+      avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${activeEmail}`,
     };
-  }, [userRole, activeGraderId, isSandbox, session]);
+  }, [userRole, activeGraderId, session, profileName]);
 
   // DB States
   const [applicants, setApplicants] = useState<Applicant[]>(INITIAL_APPLICANTS);
@@ -504,7 +723,28 @@ export default function Dashboard() {
   };
 
   // 1. Round-Robin Distribution Function
-  const handleRoundRobinDistribute = () => {
+  const handleRoundRobinDistribute = async () => {
+    if (hasSupabaseKeys && session) {
+      try {
+        const { data, error } = await supabase.rpc("distribute_applicants_round_robin");
+        if (error) throw error;
+        
+        if (data && data.success) {
+          showToast(
+            `Distributed ${data.assigned_count} applicants across ${data.graders_count} active graders!`,
+            "success"
+          );
+          window.location.reload();
+        } else {
+          showToast(data?.message || "Failed to distribute applicants.", "error");
+        }
+      } catch (err: any) {
+        console.error("Error distributing applicants:", err);
+        showToast(`Error: ${err.message}`, "error");
+      }
+      return;
+    }
+
     const unassigned = applicants.filter((a) => a.status === "unassigned");
     if (unassigned.length === 0) {
       showToast("All applicants are already assigned!", "info");
@@ -541,7 +781,74 @@ export default function Dashboard() {
   };
 
   // Manual Assign
-  const handleAssignGrader = (applicantId: string, graderName: string) => {
+  const handleAssignGrader = async (applicantId: string, graderName: string) => {
+    if (hasSupabaseKeys && session) {
+      try {
+        let graderProfile = dbProfiles.find(
+          (p) => p.name.toLowerCase() === graderName.toLowerCase()
+        );
+        
+        // Resilient Fallback: If not found by name, try to find any profile with a GRADER role, or any profile at all
+        if (!graderProfile) {
+          graderProfile = dbProfiles.find((p) => p.role === "GRADER") || dbProfiles[0];
+          if (!graderProfile) {
+            throw new Error(`No board member profiles found in database.`);
+          }
+          console.warn(`Grader name "${graderName}" not found. Falling back to profile: ${graderProfile.name}`);
+          graderName = graderProfile.name;
+        }
+
+        const { data: existingAssignment, error: findError } = await supabase
+          .from("assignments")
+          .select("id")
+          .eq("applicant_id", applicantId)
+          .maybeSingle();
+
+        if (findError) throw findError;
+
+        if (existingAssignment) {
+          const { error: updateError } = await supabase
+            .from("assignments")
+            .update({ grader_id: graderProfile.id })
+            .eq("id", existingAssignment.id);
+
+          if (updateError) throw updateError;
+        } else {
+          const { error: insertError } = await supabase
+            .from("assignments")
+            .insert({
+              applicant_id: applicantId,
+              grader_id: graderProfile.id,
+              status: "assigned",
+            });
+
+          if (insertError) throw insertError;
+        }
+
+        const { error: appError } = await supabase
+          .from("applicants")
+          .update({ status: "assigned" })
+          .eq("id", applicantId);
+
+        if (appError) throw appError;
+
+        showToast(`Successfully assigned applicant to ${graderName}!`, "success");
+        
+        setApplicants((prev) =>
+          prev.map((app) =>
+            app.id === applicantId
+              ? { ...app, status: "assigned", assignedGraderName: graderName }
+              : app
+          )
+        );
+      } catch (err: any) {
+        console.error("Supabase manual assign error:", err);
+        showToast(`Error assigning grader: ${err.message}`, "error");
+      }
+      setAssigningApplicantId(null);
+      return;
+    }
+
     setApplicants((prev) =>
       prev.map((app) =>
         app.id === applicantId
@@ -559,6 +866,7 @@ export default function Dashboard() {
     grades: { leadership: number; problemSolving: number; communication: number; essay: number },
     notes: string
   ) => {
+    console.log("handleSubmitEvaluation received grades:", grades, "notes:", notes);
     const score = parseFloat(
       (grades.leadership + grades.problemSolving + grades.communication + grades.essay).toFixed(
         1
@@ -593,7 +901,10 @@ export default function Dashboard() {
         } else {
           const { error: updateAssignError } = await supabase
             .from("assignments")
-            .update({ status: "completed" })
+            .update({ 
+              status: "completed",
+              grader_id: currentUser.id
+            })
             .eq("id", assignmentId);
 
           if (updateAssignError) throw updateAssignError;
@@ -736,9 +1047,23 @@ export default function Dashboard() {
   };
 
   // Send Offer (Triggers Resend mock)
-  const handleSendOffer = (id: string) => {
+  const handleSendOffer = async (id: string) => {
     const applicant = applicants.find((a) => a.id === id);
     if (!applicant) return;
+
+    if (hasSupabaseKeys && session) {
+      try {
+        const { error } = await supabase
+          .from("applicants")
+          .update({ status: "offered" })
+          .eq("id", id);
+        if (error) throw error;
+      } catch (err: any) {
+        console.error("Supabase send offer error:", err);
+        showToast(`Error writing to Supabase: ${err.message}`, "error");
+        return;
+      }
+    }
 
     setApplicants((prev) =>
       prev.map((app) => (app.id === id ? { ...app, status: "offered" } : app))
@@ -758,9 +1083,23 @@ export default function Dashboard() {
   };
 
   // Send Reject (Triggers Resend mock)
-  const handleSendReject = (id: string) => {
+  const handleSendReject = async (id: string) => {
     const applicant = applicants.find((a) => a.id === id);
     if (!applicant) return;
+
+    if (hasSupabaseKeys && session) {
+      try {
+        const { error } = await supabase
+          .from("applicants")
+          .update({ status: "rejected" })
+          .eq("id", id);
+        if (error) throw error;
+      } catch (err: any) {
+        console.error("Supabase send reject error:", err);
+        showToast(`Error writing to Supabase: ${err.message}`, "error");
+        return;
+      }
+    }
 
     setApplicants((prev) =>
       prev.map((app) => (app.id === id ? { ...app, status: "rejected" } : app))
@@ -1078,7 +1417,30 @@ export default function Dashboard() {
   }
 
   // SIGN IN REQUIRED SCREEN (WHEN LIVE KEYS CONFIGURED)
-  if (!session && !isSandbox) {
+  if (!session) {
+    if (!hasSupabaseKeys) {
+      return (
+        <div className="flex h-screen w-full bg-slate-100 items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white border border-slate-200 rounded-3xl p-8 shadow-xl space-y-6 text-center">
+            <AlertTriangle className="h-12 w-12 text-amber-600 mx-auto" />
+            <h2 className="text-xl font-black text-slate-800 tracking-tight">
+              Supabase Configuration Missing
+            </h2>
+            <p className="text-xs text-slate-550 leading-relaxed">
+              Please configure your Supabase credentials in your <code className="bg-slate-100 px-1 py-0.5 rounded font-mono">.env.local</code> file in the project root directory.
+            </p>
+            <div className="text-left bg-slate-50 p-4 rounded-2xl border border-slate-200/50 space-y-2 text-[11px] font-mono text-slate-600">
+              <p>NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co</p>
+              <p>NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key</p>
+            </div>
+            <p className="text-[10px] text-slate-400">
+              Once configured, restart your local development server (e.g., <code className="bg-slate-100 px-1 py-0.5 rounded">npm run dev</code>).
+            </p>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="flex h-screen w-full bg-slate-100 items-center justify-center p-4">
         <div className="w-full max-w-md bg-white border border-slate-200 rounded-3xl p-8 shadow-xl space-y-6">
@@ -1092,7 +1454,7 @@ export default function Dashboard() {
               Recruitment Dashboard Sign-In
             </h2>
             <p className="text-xs text-slate-550 max-w-xs leading-relaxed">
-              Verify your credentials using Supabase passwordless magic link authentication.
+              Verify your credentials using Supabase passwordless magic link or password authentication.
             </p>
           </div>
 
@@ -1110,28 +1472,38 @@ export default function Dashboard() {
                 className="w-full text-xs border border-slate-200 rounded-xl px-3.5 py-3 outline-none focus:border-indigo-500 shadow-sm"
               />
             </div>
+            
+            {showPasswordLogin && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 block">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="w-full text-xs border border-slate-200 rounded-xl px-3.5 py-3 outline-none focus:border-indigo-500 shadow-sm"
+                />
+              </div>
+            )}
+
             <button
               type="submit"
               className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl py-3 text-xs font-bold transition-all shadow-md shadow-indigo-500/10 cursor-pointer"
             >
-              Send Magic Link
+              {showPasswordLogin ? "Sign In with Password" : "Send Magic Link"}
             </button>
           </form>
 
-          {/* Fallback to Developer Sandbox bypass if they don't have DB configured yet */}
-          <div className="border-t border-slate-100 pt-5 space-y-2">
-            <p className="text-[10px] text-slate-400 text-center leading-normal">
-              No database configuration set? You can bypass to run in local mock preview.
-            </p>
+          <div className="text-center">
             <button
-              onClick={() => {
-                setIsSandbox(true);
-                setUserRole("ADMIN");
-                showToast("Entering Mock Sandbox Mode (Preview)", "info");
-              }}
-              className="w-full border border-slate-200 hover:bg-slate-50 text-slate-655 rounded-xl py-2.5 text-xs font-bold transition-all cursor-pointer"
+              type="button"
+              onClick={() => setShowPasswordLogin(!showPasswordLogin)}
+              className="text-[11px] font-bold text-indigo-600 hover:text-indigo-750 cursor-pointer underline"
             >
-              Bypass to Sandbox Preview
+              {showPasswordLogin ? "Use passwordless email Magic Link instead" : "Use email & password sign-in instead"}
             </button>
           </div>
         </div>
@@ -1139,31 +1511,8 @@ export default function Dashboard() {
     );
   }
 
-  // ACTIVE INTERACTION VIEW
   return (
     <div className="flex h-screen w-full bg-slate-100 text-slate-800 font-sans overflow-hidden">
-      
-      {/* Sandbox Alert Header Banner (Alert if missing config) */}
-      {isSandbox && (
-        <div className="absolute top-0 left-0 right-0 z-40 bg-indigo-650 text-white text-[11px] font-bold px-4 py-2 flex items-center justify-between shadow-md">
-          <span className="flex items-center gap-1.5">
-            <Lock className="h-3.5 w-3.5" />
-            Running in Local Sandbox Mode (Preview Only). To hook into your Supabase database and enable magic links, configure your credentials in a <span className="font-mono bg-indigo-700 px-1 py-0.5 rounded">.env.local</span> file.
-          </span>
-          {!hasSupabaseKeys && (
-            <button
-              onClick={() => {
-                setIsSandbox(false);
-                setSession(null);
-              }}
-              className="underline hover:text-indigo-200 font-bold ml-4"
-            >
-              Show Sign-In UI
-            </button>
-          )}
-        </div>
-      )}
-
       {/* LEFT SIDEBAR (NAVIGATION) */}
       <aside className={`w-64 border-r border-slate-200/80 bg-slate-55 flex flex-col justify-between shrink-0 ${isSandbox ? "pt-8" : ""}`}>
         <div>
@@ -1525,7 +1874,7 @@ export default function Dashboard() {
                             title="Unassign all applicants and wipe all grades"
                           >
                             <RotateCcw className="h-3.5 w-3.5 text-rose-700" />
-                            Reset Sandbox Board
+                            Reset Recruitment Board
                           </button>
                         </div>
                       )}
@@ -1576,8 +1925,9 @@ export default function Dashboard() {
                                 </button>
                               </div>
                               <div className="space-y-1 max-h-40 overflow-y-auto">
-                                {INITIAL_GRADERS.filter(
-                                  (g) => g.role === "GRADER"
+                                {(dbProfiles.length > 0
+                                  ? dbProfiles.filter((p) => p.role === "GRADER")
+                                  : INITIAL_GRADERS.filter((g) => g.role === "GRADER")
                                 ).map((grader) => (
                                   <button
                                     key={grader.id}
