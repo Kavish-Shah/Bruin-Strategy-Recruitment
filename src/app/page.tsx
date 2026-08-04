@@ -23,6 +23,7 @@ import {
   AlertTriangle,
   Lock,
   RotateCcw,
+  Shield,
 } from "lucide-react";
 
 import StatCard from "@/components/StatCard";
@@ -89,7 +90,7 @@ const INITIAL_APPLICANTS: Applicant[] = [
     status: "assigned",
     hasResume: true,
     assignedGraderName: "John Doe",
-    scheduledTime: "09:00 AM",
+    scheduledTime: null,
     interviewComments: [],
   },
   {
@@ -102,7 +103,7 @@ const INITIAL_APPLICANTS: Applicant[] = [
     status: "assigned",
     hasResume: true,
     assignedGraderName: "Jane Smith",
-    scheduledTime: "09:00 AM",
+    scheduledTime: null,
     interviewComments: [],
   },
   {
@@ -115,7 +116,7 @@ const INITIAL_APPLICANTS: Applicant[] = [
     status: "assigned",
     hasResume: true,
     assignedGraderName: "Jane Smith",
-    scheduledTime: "09:00 AM",
+    scheduledTime: null,
     interviewComments: [],
   },
   {
@@ -128,7 +129,7 @@ const INITIAL_APPLICANTS: Applicant[] = [
     status: "assigned",
     hasResume: true,
     assignedGraderName: "John Doe",
-    scheduledTime: "09:00 AM",
+    scheduledTime: null,
     interviewComments: [],
   },
   {
@@ -141,7 +142,7 @@ const INITIAL_APPLICANTS: Applicant[] = [
     status: "assigned",
     hasResume: true,
     assignedGraderName: "Jane Smith",
-    scheduledTime: "09:00 AM",
+    scheduledTime: null,
     interviewComments: [],
   },
   {
@@ -154,7 +155,7 @@ const INITIAL_APPLICANTS: Applicant[] = [
     status: "assigned",
     hasResume: true,
     assignedGraderName: "Alex Chen",
-    scheduledTime: "10:30 AM",
+    scheduledTime: null,
     interviewComments: [],
   },
   {
@@ -286,7 +287,7 @@ interface EmailLog {
 }
 
 export default function Dashboard() {
-  const [activeTab, setActiveTab] = useState<string>("my_assignments");
+  const [activeTab, setActiveTab] = useState<string>("applicant_profiles");
   const [selectedCohort, setSelectedCohort] = useState<string>(
     "Management Consulting"
   );
@@ -304,6 +305,10 @@ export default function Dashboard() {
   const [emailInput, setEmailInput] = useState<string>(" ");
   const [password, setPassword] = useState<string>("");
   const [showPasswordLogin, setShowPasswordLogin] = useState<boolean>(true);
+  const [isSignUpMode, setIsSignUpMode] = useState<boolean>(false);
+  const [signUpName, setSignUpName] = useState<string>("");
+  const [signUpEmail, setSignUpEmail] = useState<string>("");
+  const [signUpPassword, setSignUpPassword] = useState<string>("");
 
   // State to switch active grader view (John Doe, Jane Smith, Alex Chen)
   const [activeGraderId, setActiveGraderId] = useState<string>("g1");
@@ -317,10 +322,15 @@ export default function Dashboard() {
 
   // Check if real Supabase keys are configured in local environment
   const hasSupabaseKeys = useMemo(() => {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key =
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
     return !!(
-      process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) &&
-      !process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder")
+      url &&
+      key &&
+      !url.includes("placeholder") &&
+      !url.includes("your-project-id")
     );
   }, []);
 
@@ -331,34 +341,49 @@ export default function Dashboard() {
       return;
     }
 
-    // Get current session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session) {
-        fetchUserRole(session.user.id);
-      }
-      setLoadingAuth(false);
-    });
+    let isMounted = true;
+
+    // Get current session safely
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (!isMounted) return;
+        const session = data?.session || null;
+        setSession(session);
+        if (session) {
+          fetchUserRole(session.user.id);
+        }
+        setLoadingAuth(false);
+      })
+      .catch((err) => {
+        if (!isMounted) return;
+        console.warn("Supabase auth connection failed, falling back gracefully:", err);
+        setLoadingAuth(false);
+      });
 
     // Listen to changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!isMounted) return;
       setSession(session);
       if (session) {
         fetchUserRole(session.user.id);
       } else {
-        setUserRole("GRADER");
-        setProfileName("Auth User");
+        setUserRole("ADMIN");
+        setProfileName("Admin Board Member");
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, [hasSupabaseKeys]);
 
   // Synchronize and load applicants list from Supabase if keys are configured
   useEffect(() => {
-    if (!hasSupabaseKeys || !session) return;
+    if (!hasSupabaseKeys) return;
 
     const fetchApplicantsFromSupabase = async () => {
       try {
@@ -396,83 +421,9 @@ export default function Dashboard() {
         // Fetch all profiles to see who is registered as a grader
         const { data: profilesList } = await supabase
           .from("profiles")
-          .select("id, name, role");
+          .select("id, name, role, email");
 
-        if (profilesList) {
-          setDbProfiles(profilesList);
-        }
-
-        // 3. Auto-seed 15 applicants if the database is empty
-        if (!dbApplicants || dbApplicants.length === 0) {
-          console.log("Supabase applicants table is empty, auto-seeding 15 candidates...");
-          
-          const seedApplicants = INITIAL_APPLICANTS.map((app) => ({
-            name: app.name,
-            email: app.email,
-            cohort: app.cohort,
-            status: app.status,
-          }));
-
-          const { data: insertedApps, error: insertError } = await supabase
-            .from("applicants")
-            .insert(seedApplicants)
-            .select();
-
-          if (insertError) throw insertError;
-
-          const defaultGraders: Record<string, string> = {
-            "Sarah Jenkins": "John Doe",
-            "Jessica Wang": "Jane Smith",
-            "David Kim": "Jane Smith",
-            "Michael Brown": "John Doe",
-            "Emily Davis": "Jane Smith",
-            "Ryan Patel": "Alex Chen",
-            "Grace Lee": "Marcus Vance",
-            "James Wilson": "John Doe",
-            "Sophia Martinez": "Jane Smith",
-            "Ashley Taylor": "Emily Taylor",
-            "Daniel Anderson": "Alex Chen",
-            "Olivia Thomas": "Marcus Vance",
-            "William Jackson": "Emily Taylor",
-            "Sophia White": "Alex Chen",
-            "Matthew Harris": "Emily Taylor",
-          };
-
-          const assignmentsToInsert = [];
-          if (insertedApps) {
-            if (profilesList && profilesList.length > 0) {
-              let pIdx = 0;
-              for (const app of insertedApps) {
-                const desiredGraderName = defaultGraders[app.name];
-                const grader = profilesList.find((p) => p.name === desiredGraderName) || profilesList[pIdx % profilesList.length];
-                assignmentsToInsert.push({
-                  applicant_id: app.id,
-                  grader_id: grader.id,
-                  status: "assigned",
-                });
-                pIdx++;
-              }
-            } else {
-              for (const app of insertedApps) {
-                assignmentsToInsert.push({
-                  applicant_id: app.id,
-                  grader_id: session.user.id,
-                  status: "assigned",
-                });
-              }
-            }
-
-            const { error: assignInsertError } = await supabase
-              .from("assignments")
-              .insert(assignmentsToInsert);
-
-            if (assignInsertError) throw assignInsertError;
-          }
-
-          showToast("Successfully seeded 15 candidates in Supabase!", "success");
-          window.location.reload();
-          return;
-        }
+        setDbProfiles(profilesList || []);
 
         // Map assignments by applicant_id
         const assignmentMap: Record<string, any> = {};
@@ -486,16 +437,16 @@ export default function Dashboard() {
         const mapped: Applicant[] = dbApplicants.map((app) => {
           const ass = assignmentMap[app.id];
           const val = ass?.evaluations ? (Array.isArray(ass.evaluations) ? ass.evaluations[0] : ass.evaluations) : undefined;
+          let grades: any = undefined;
+
           if (val) {
-            console.log(`Loaded evaluation for applicant "${app.name}":`, val);
+            grades = {
+              leadership: val.leadership_score || 0,
+              problemSolving: val.problem_solving_score || 0,
+              communication: val.communication_score || 0,
+              essay: val.essay_score || 0,
+            };
           }
-          
-          const grades = val ? {
-            leadership: Number(val.leadership_score),
-            problemSolving: Number(val.problem_solving_score),
-            communication: Number(val.communication_score),
-            essay: val.essay_score ? Number(val.essay_score) : undefined,
-          } : undefined;
 
           const totalScore = grades ? (grades.leadership + grades.problemSolving + grades.communication + (grades.essay || 0)) : undefined;
 
@@ -507,11 +458,26 @@ export default function Dashboard() {
             normalizedCohort = "Healthcare Consulting";
           }
 
+          const assignedGraderId = app.assigned_grader_id || ass?.grader_id;
+
+          const graderProfileName = ass?.profiles
+            ? (Array.isArray(ass.profiles) ? ass.profiles[0]?.name : ass.profiles.name)
+            : undefined;
+
+          const fallbackGraderName = assignedGraderId && profilesList
+            ? profilesList.find((p: any) => p.id === assignedGraderId)?.name
+            : undefined;
+
+          const assignedGraderName =
+            graderProfileName ||
+            fallbackGraderName ||
+            (session && assignedGraderId === session.user.id ? loggedInName : undefined);
+
           const comments: InterviewComment[] = [];
           if (val && val.notes) {
             comments.push({
               id: `eval-notes-${app.id}`,
-              author: ass?.profiles?.name || "Assigned Grader",
+              author: assignedGraderName || "Board Member",
               text: val.notes,
               timestamp: val.created_at ? new Date(val.created_at).toLocaleString([], {
                 year: "numeric",
@@ -534,19 +500,20 @@ export default function Dashboard() {
             score: totalScore !== undefined ? parseFloat(totalScore.toFixed(1)) : undefined,
             grades,
             hasResume: true,
-            assignedGraderName: ass?.profiles?.name || (session && ass?.grader_id === session.user.id ? loggedInName : undefined) || "Assigned Grader",
-            scheduledTime: normalizedCohort.includes("Health") ? "10:30 AM" : "09:00 AM",
+            assignedGraderId: assignedGraderId || undefined,
+            assignedGraderName: assignedGraderName,
+            scheduledTime: app.scheduled_time || null,
             interviewComments: comments,
             shortAnswer: app.short_answer || undefined,
           };
         });
 
-        // Update local React state with DB entries
+        // Update local React state strictly with DB entries from Supabase
         setApplicants(mapped);
 
       } catch (err: any) {
         console.error("Error fetching applicants from Supabase:", err);
-        showToast(`Failed to load data from Supabase: ${err.message}`, "error");
+        setApplicants([]);
       }
     };
 
@@ -559,46 +526,103 @@ export default function Dashboard() {
       const { data, error } = await supabase
         .from("profiles")
         .select("role, name")
-        .eq("id", userId)
-        .single();
+        .eq("id", userId);
 
       if (error) throw error;
-      if (data) {
-        setUserRole(data.role as any);
-        setProfileName(data.name);
-        showToast(`Authenticated as ${data.name} (${data.role})`, "success");
+      if (data && data.length > 0) {
+        const userProf = data[0];
+        setUserRole(userProf.role as any);
+        setProfileName(userProf.name);
+        showToast(`Authenticated as ${userProf.name} (${userProf.role})`, "success");
+      } else {
+        setUserRole("GRADER");
+        setProfileName("Grader Board Member");
       }
     } catch (err: any) {
-      console.warn("Failed to fetch role from Supabase 'profiles' table:", err.message);
+      console.warn("Notice fetching user role:", err.message);
+      setUserRole("GRADER");
     }
   };
 
-  // Sign In using email/password or magic link
+  // Sign In using email/password
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!emailInput.trim()) return;
+    if (!emailInput.trim() || !password) return;
     setLoadingAuth(true);
 
     try {
-      if (showPasswordLogin) {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: emailInput.trim(),
-          password: password,
-        });
-        if (error) throw error;
-        showToast("Signed in successfully!", "success");
-      } else {
-        const { error } = await supabase.auth.signInWithOtp({
-          email: emailInput.trim(),
-          options: {
-            emailRedirectTo: window.location.origin,
-          },
-        });
-        if (error) throw error;
-        showToast("Magic Link sent! Check your inbox.", "success");
-      }
+      const { error } = await supabase.auth.signInWithPassword({
+        email: emailInput.trim(),
+        password: password,
+      });
+      if (error) throw error;
+      showToast("Signed in successfully!", "success");
     } catch (err: any) {
       showToast(`Auth Error: ${err.message}`, "error");
+    } finally {
+      setLoadingAuth(false);
+    }
+  };
+
+  // Sign Up new grader account (strictly GRADER role)
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanName = signUpName.trim();
+    const cleanEmail = signUpEmail.trim().toLowerCase();
+    if (!cleanName || !cleanEmail || !signUpPassword) return;
+    setLoadingAuth(true);
+
+    try {
+      // 1. Try Supabase Auth Sign Up
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password: signUpPassword,
+        options: {
+          data: {
+            name: cleanName,
+            role: "GRADER",
+          },
+        },
+      });
+
+      if (authError) throw authError;
+
+      const userId = authData?.user?.id;
+      if (!userId) throw new Error("No user ID returned from sign up");
+
+      // 2. Insert/Upsert new Grader profile into public.profiles table
+      const newProfileObj = {
+        id: userId,
+        name: cleanName,
+        email: cleanEmail,
+        role: "GRADER",
+      };
+
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .upsert([newProfileObj], { onConflict: "id" });
+
+      if (profileError) {
+        console.warn("Notice saving profile to DB:", profileError.message);
+      }
+
+      // 3. Update active session & role to GRADER
+      setUserRole("GRADER");
+      setProfileName(cleanName);
+      setSession({
+        user: { id: userId, email: cleanEmail },
+      } as any);
+
+      // 4. Update dbProfiles state
+      setDbProfiles((prev) => [
+        ...prev.filter((p) => p.email !== cleanEmail),
+        newProfileObj,
+      ]);
+
+      showToast(`Grader account created for ${cleanName}! Signed in as Grader.`, "success");
+    } catch (err: any) {
+      console.error("Sign up error:", err);
+      showToast(`Notice: ${err.message}`, "error");
     } finally {
       setLoadingAuth(false);
     }
@@ -622,36 +646,42 @@ export default function Dashboard() {
     }
   };
 
+  // Dynamically compute active graders based ONLY on profiles in Supabase (dbProfiles) when configured
+  const gradersList = useMemo<Grader[]>(() => {
+    if (hasSupabaseKeys) {
+      if (dbProfiles && dbProfiles.length > 0) {
+        return dbProfiles.map((p) => ({
+          id: p.id,
+          name: p.name,
+          email: p.email || `${p.name.toLowerCase().replace(/\s+/g, ".")}@bruinstrategy.org`,
+          role: (p.role === "ADMIN" ? "ADMIN" : "GRADER") as "ADMIN" | "GRADER",
+          avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(p.name)}`,
+        }));
+      }
+      return [];
+    }
+    return INITIAL_GRADERS;
+  }, [hasSupabaseKeys, dbProfiles]);
+
   // Track the logged in user context
   const currentUser = useMemo(() => {
-    const name = profileName !== "Auth User" ? profileName : (session?.user?.email?.split("@")[0] || "Auth User");
-    const email = session?.user?.email || "auth@bruinstrategy.org";
+    const name = profileName !== "Auth User" ? profileName : (session?.user?.email?.split("@")[0] || "Grader Board Member");
+    const email = session?.user?.email || "grader@bruinstrategy.org";
     const id = session?.user?.id || "g-user";
     
-    let activeName = name;
-    let activeEmail = email;
-    let activeId = id;
-    
-    if (userRole === "GRADER") {
-      const selectedGrader = INITIAL_GRADERS.find((g) => g.id === activeGraderId);
-      if (selectedGrader) {
-        activeName = selectedGrader.name;
-        activeEmail = selectedGrader.email;
-        activeId = selectedGrader.id;
-      }
-    }
-    
     return {
-      id: activeId,
-      name: activeName,
-      email: activeEmail,
+      id,
+      name,
+      email,
       role: userRole,
-      avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${activeEmail}`,
+      avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(name)}`,
     };
-  }, [userRole, activeGraderId, session, profileName]);
+  }, [profileName, session, userRole]);
 
   // DB States
-  const [applicants, setApplicants] = useState<Applicant[]>(INITIAL_APPLICANTS);
+  const [applicants, setApplicants] = useState<Applicant[]>(() =>
+    hasSupabaseKeys ? [] : INITIAL_APPLICANTS
+  );
   const [emailLogs, setEmailLogs] = useState<EmailLog[]>([
     {
       id: "log-1",
@@ -751,7 +781,7 @@ export default function Dashboard() {
       return;
     }
 
-    const activeGraders = INITIAL_GRADERS.filter((g) => g.role === "GRADER");
+    const activeGraders = gradersList.filter((g) => g.role === "GRADER");
     if (activeGraders.length === 0) {
       showToast("No active graders available to distribute to.", "error");
       return;
@@ -827,17 +857,33 @@ export default function Dashboard() {
 
         const { error: appError } = await supabase
           .from("applicants")
-          .update({ status: "assigned" })
+          .update({
+            status: "assigned",
+            assigned_grader_id: graderProfile.id,
+          })
           .eq("id", applicantId);
 
-        if (appError) throw appError;
+        if (appError && appError.code === "42703") {
+          const { error: fallbackError } = await supabase
+            .from("applicants")
+            .update({ status: "assigned" })
+            .eq("id", applicantId);
+          if (fallbackError) throw fallbackError;
+        } else if (appError) {
+          throw appError;
+        }
 
         showToast(`Successfully assigned applicant to ${graderName}!`, "success");
         
         setApplicants((prev) =>
           prev.map((app) =>
             app.id === applicantId
-              ? { ...app, status: "assigned", assignedGraderName: graderName }
+              ? {
+                  ...app,
+                  status: "assigned",
+                  assignedGraderId: graderProfile.id,
+                  assignedGraderName: graderName,
+                }
               : app
           )
         );
@@ -858,6 +904,77 @@ export default function Dashboard() {
     );
     setAssigningApplicantId(null);
     showToast(`Assigned applicant to ${graderName}`, "success");
+  };
+
+  // Manual Unassign
+  const handleUnassignGrader = async (applicantId: string) => {
+    const applicant = applicants.find((a) => a.id === applicantId);
+    const applicantName = applicant ? applicant.name : "Applicant";
+
+    if (hasSupabaseKeys && session) {
+      try {
+        // Delete assignment record
+        const { error: assignError } = await supabase
+          .from("assignments")
+          .delete()
+          .eq("applicant_id", applicantId);
+
+        if (assignError) {
+          console.warn("Notice deleting assignment record:", assignError.message);
+        }
+
+        // Update applicants table: set status to unassigned and assigned_grader_id to null
+        const { error: appError } = await supabase
+          .from("applicants")
+          .update({
+            status: "unassigned",
+            assigned_grader_id: null,
+          })
+          .eq("id", applicantId);
+
+        if (appError && appError.code === "42703") {
+          const { error: fallbackError } = await supabase
+            .from("applicants")
+            .update({ status: "unassigned" })
+            .eq("id", applicantId);
+          if (fallbackError) throw fallbackError;
+        } else if (appError) {
+          throw appError;
+        }
+
+        showToast(`Successfully unassigned ${applicantName}!`, "info");
+      } catch (err: any) {
+        console.error("Supabase manual unassign error:", err);
+        showToast(`Error unassigning grader: ${err.message}`, "error");
+        return;
+      }
+    } else {
+      showToast(`Unassigned ${applicantName}`, "info");
+    }
+
+    setApplicants((prev) =>
+      prev.map((app) =>
+        app.id === applicantId
+          ? {
+              ...app,
+              status: "unassigned",
+              assignedGraderId: undefined,
+              assignedGraderName: undefined,
+            }
+          : app
+      )
+    );
+
+    setSelectedApplicantForProfile((prev) =>
+      prev && prev.id === applicantId
+        ? {
+            ...prev,
+            status: "unassigned",
+            assignedGraderId: undefined,
+            assignedGraderName: undefined,
+          }
+        : prev
+    );
   };
 
   // Submit Evaluation
@@ -976,10 +1093,21 @@ export default function Dashboard() {
   };
 
   // Reschedule Applicant timing Block
-  const handleRescheduleApplicant = (
+  const handleRescheduleApplicant = async (
     applicantId: string,
-    newTime: "09:00 AM" | "10:30 AM" | null
+    newTime: "09:00 AM" | "10:30 AM" | "01:00 PM" | null
   ) => {
+    if (hasSupabaseKeys && session) {
+      try {
+        await supabase
+          .from("applicants")
+          .update({ scheduled_time: newTime })
+          .eq("id", applicantId);
+      } catch (err: any) {
+        console.warn("Notice saving scheduled_time:", err);
+      }
+    }
+
     setApplicants((prev) =>
       prev.map((app) =>
         app.id === applicantId ? { ...app, scheduledTime: newTime } : app
@@ -991,6 +1119,8 @@ export default function Dashboard() {
         ? "9:00 AM Block"
         : newTime === "10:30 AM"
         ? "10:30 AM Block"
+        : newTime === "01:00 PM"
+        ? "1:00 PM Block"
         : "Unscheduled Queue";
     showToast(`Rescheduled ${app?.name} to the ${label}!`, "success");
   };
@@ -1080,6 +1210,57 @@ export default function Dashboard() {
 
     setEmailLogs((prev) => [newLog, ...prev]);
     showToast(`Offer email sent via Resend API to ${applicant.name}!`, "success");
+  };
+
+  // Revoke / Rescind Offer (returns candidate to completed/graded status needing an offer)
+  const handleRevokeOffer = async (id: string) => {
+    const applicant = applicants.find((a) => a.id === id);
+    if (!applicant) return;
+
+    if (hasSupabaseKeys && session) {
+      try {
+        const { error } = await supabase
+          .from("applicants")
+          .update({
+            status: "completed",
+            scheduled_time: null,
+          })
+          .eq("id", id);
+
+        if (error) throw error;
+      } catch (err: any) {
+        console.error("Supabase revoke offer error:", err);
+        showToast(`Error updating Supabase: ${err.message}`, "error");
+        return;
+      }
+    }
+
+    setApplicants((prev) =>
+      prev.map((app) =>
+        app.id === id
+          ? {
+              ...app,
+              status: "completed",
+              scheduledTime: null,
+            }
+          : app
+      )
+    );
+
+    setSelectedApplicantForProfile((prev) =>
+      prev && prev.id === id
+        ? {
+            ...prev,
+            status: "completed",
+            scheduledTime: null,
+          }
+        : prev
+    );
+
+    showToast(
+      `Revoked offer for ${applicant.name}. Candidate returned to graded status needing offer.`,
+      "info"
+    );
   };
 
   // Send Reject (Triggers Resend mock)
@@ -1333,7 +1514,7 @@ export default function Dashboard() {
 
   // Compute grading statistics per grader dynamically (including average scores & expanded collapsibles)
   const graderAssignments = useMemo(() => {
-    return INITIAL_GRADERS.map((grader) => {
+    return gradersList.map((grader) => {
       const assignedApps = applicants.filter(
         (a) => a.assignedGraderName === grader.name
       );
@@ -1358,7 +1539,7 @@ export default function Dashboard() {
         gradedApplicants: completedApps,
       };
     });
-  }, [applicants]);
+  }, [gradersList, applicants]);
 
   // Filter and search applicants
   const filteredApplicants = useMemo(() => {
@@ -1416,9 +1597,7 @@ export default function Dashboard() {
     );
   }
 
-  // SIGN IN REQUIRED SCREEN (WHEN LIVE KEYS CONFIGURED)
-  if (!session) {
-    if (!hasSupabaseKeys) {
+  if (!hasSupabaseKeys) {
       return (
         <div className="flex h-screen w-full bg-slate-100 items-center justify-center p-4">
           <div className="w-full max-w-md bg-white border border-slate-200 rounded-3xl p-8 shadow-xl space-y-6 text-center">
@@ -1441,72 +1620,96 @@ export default function Dashboard() {
       );
     }
 
+  if (!session && !isSandbox) {
     return (
-      <div className="flex h-screen w-full bg-slate-100 items-center justify-center p-4">
-        <div className="w-full max-w-md bg-white border border-slate-200 rounded-3xl p-8 shadow-xl space-y-6">
-          <div className="flex flex-col items-center text-center space-y-2.5">
-            <img
-              src="/bruin-strategy-network-logo.png"
-              alt="Bruin Strategy"
-              className="h-14 w-auto object-contain"
-            />
-            <h2 className="text-xl font-black text-slate-800 tracking-tight">
-              Recruitment Dashboard Sign-In
+      <div className="flex min-h-screen w-full items-center justify-center bg-slate-50 p-4">
+        <div className="w-full max-w-md bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden">
+          <div className="p-8 pb-6 text-center border-b border-slate-100">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-50 border border-indigo-100 mb-4">
+              <Lock className="h-6 w-6 text-indigo-600" />
+            </div>
+            <h2 className="text-2xl font-black text-slate-800 tracking-tight">
+              {isSignUpMode ? "Create Grader Account" : "Welcome Back"}
             </h2>
-            <p className="text-xs text-slate-550 max-w-xs leading-relaxed">
-              Verify your credentials using Supabase passwordless magic link or password authentication.
+            <p className="text-sm text-slate-500 mt-2">
+              {isSignUpMode
+                ? "Register to evaluate candidates."
+                : "Sign in to access your recruitment dashboard."}
             </p>
           </div>
 
-          <form onSubmit={handleSignIn} className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 block">
-                Board Member Email
-              </label>
-              <input
-                type="email"
-                placeholder="name@bruinstrategy.org"
-                value={emailInput === " " ? "" : emailInput}
-                onChange={(e) => setEmailInput(e.target.value)}
-                required
-                className="w-full text-xs border border-slate-200 rounded-xl px-3.5 py-3 outline-none focus:border-indigo-500 shadow-sm"
-              />
-            </div>
-            
-            {showPasswordLogin && (
+          <div className="p-8">
+            <form onSubmit={isSignUpMode ? handleSignUp : handleSignIn} className="space-y-5">
+              {isSignUpMode && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Full Name
+                  </label>
+                  <input
+                    type="text"
+                    value={signUpName}
+                    onChange={(e) => setSignUpName(e.target.value)}
+                    required
+                    placeholder="Jane Doe"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                  />
+                </div>
+              )}
+
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 block">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  value={isSignUpMode ? signUpEmail : emailInput}
+                  onChange={(e) => isSignUpMode ? setSignUpEmail(e.target.value) : setEmailInput(e.target.value)}
+                  required
+                  placeholder="name@bruinstrategy.org"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                   Password
                 </label>
                 <input
                   type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  value={isSignUpMode ? signUpPassword : password}
+                  onChange={(e) => isSignUpMode ? setSignUpPassword(e.target.value) : setPassword(e.target.value)}
                   required
-                  className="w-full text-xs border border-slate-200 rounded-xl px-3.5 py-3 outline-none focus:border-indigo-500 shadow-sm"
+                  placeholder="••••••••"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
                 />
               </div>
-            )}
 
-            <button
-              type="submit"
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl py-3 text-xs font-bold transition-all shadow-md shadow-indigo-500/10 cursor-pointer"
-            >
-              {showPasswordLogin ? "Sign In with Password" : "Send Magic Link"}
-            </button>
-          </form>
+              <button
+                type="submit"
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-4 py-3.5 transition-all shadow-sm hover:shadow active:scale-[0.98]"
+              >
+                {isSignUpMode ? "Create Account" : "Sign In"}
+              </button>
+            </form>
 
-          <div className="text-center">
-            <button
-              type="button"
-              onClick={() => setShowPasswordLogin(!showPasswordLogin)}
-              className="text-[11px] font-bold text-indigo-600 hover:text-indigo-750 cursor-pointer underline"
-            >
-              {showPasswordLogin ? "Use passwordless email Magic Link instead" : "Use email & password sign-in instead"}
-            </button>
+            <div className="mt-6 text-center">
+              <button
+                type="button"
+                onClick={() => setIsSignUpMode(!isSignUpMode)}
+                className="text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors"
+              >
+                {isSignUpMode
+                  ? "Already have an account? Sign In"
+                  : "Need a grader account? Create one"}
+              </button>
+            </div>
           </div>
         </div>
+        {toast.visible && (
+          <div className={`fixed bottom-4 right-4 px-4 py-3 rounded-xl text-sm font-bold shadow-lg animate-in fade-in slide-in-from-bottom-4 ${toast.type === "error" ? "bg-rose-500 text-white" : toast.type === "success" ? "bg-emerald-500 text-white" : "bg-blue-500 text-white"}`}>
+            {toast.message}
+          </div>
+        )}
       </div>
     );
   }
@@ -1525,73 +1728,46 @@ export default function Dashboard() {
             />
           </div>
 
-          {/* Quick Role switcher for testing */}
-          <div className="p-4 mx-3 my-4 rounded-2xl border border-slate-200/60 bg-white shadow-sm">
-            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-2 text-center">
-              SYSTEM ROLE
-            </span>
-            <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl">
-              <button
-                onClick={() => {
-                  setUserRole("ADMIN");
-                  setActiveTab("applicant_profiles");
-                  setStatusFilter("all");
-                  showToast("Switched system view to Admin", "info");
-                }}
-                className={`py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                  userRole === "ADMIN"
-                    ? "bg-white text-slate-900 shadow-sm border border-slate-200/20"
-                    : "text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                Admin
-              </button>
-              <button
-                onClick={() => {
-                  setUserRole("GRADER");
-                  setActiveTab("my_assignments");
-                  setStatusFilter("all");
-                  showToast(`Switched system view to Grader (${INITIAL_GRADERS.find(g => g.id === activeGraderId)?.name})`, "info");
-                }}
-                className={`py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                  userRole === "GRADER"
-                    ? "bg-white text-slate-900 shadow-sm border border-slate-200/20"
-                    : "text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                Grader
-              </button>
-            </div>
-
-            {/* Switch between Graders (specifically 3) */}
-            {userRole === "GRADER" && (
-              <div className="mt-3 pt-3 border-t border-slate-100 space-y-1.5">
-                <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider block text-center">
-                  ACTING GRADER
-                </span>
-                <select
-                  value={activeGraderId}
-                  onChange={(e) => {
-                    setActiveGraderId(e.target.value);
+          {/* SYSTEM ROLE switcher - Only accessible to ADMIN users */}
+          {userRole === "ADMIN" && (
+            <div className="p-4 mx-3 my-4 rounded-2xl border border-slate-200/60 bg-white shadow-sm">
+              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-2 text-center">
+                SYSTEM ROLE
+              </span>
+              <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl">
+                <button
+                  onClick={() => {
+                    setUserRole("ADMIN");
+                    setActiveTab("applicant_profiles");
                     setStatusFilter("all");
-                    showToast(
-                      `Switched active grader to ${
-                        INITIAL_GRADERS.find((g) => g.id === e.target.value)?.name
-                      }`,
-                      "info"
-                    );
+                    showToast("Switched system view to Admin", "info");
                   }}
-                  className="w-full text-xs font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none cursor-pointer"
+                  className={`py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                    userRole === "ADMIN"
+                      ? "bg-white text-slate-900 shadow-sm border border-slate-200/20"
+                      : "text-slate-500 hover:text-slate-800"
+                  }`}
                 >
-                  <option value="g1">John Doe</option>
-                  <option value="g2">Jane Smith</option>
-                  <option value="g3">Alex Chen</option>
-                  <option value="g4">Emily Taylor</option>
-                  <option value="g5">Marcus Vance</option>
-                </select>
+                  Admin
+                </button>
+                <button
+                  onClick={() => {
+                    setUserRole("GRADER");
+                    setActiveTab("my_assignments");
+                    setStatusFilter("all");
+                    showToast(`Switched system view to Grader (${gradersList.find(g => g.id === activeGraderId)?.name || "Grader"})`, "info");
+                  }}
+                  className={`py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                    (userRole as string) === "GRADER"
+                      ? "bg-white text-slate-900 shadow-sm border border-slate-200/20"
+                      : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  Grader
+                </button>
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Navigation Menu */}
           <nav className="px-3 space-y-1">
@@ -1613,7 +1789,7 @@ export default function Dashboard() {
                   {
                     applicants.filter(
                       (a) =>
-                        a.assignedGraderName === currentUser.name &&
+                        (a.assignedGraderName === currentUser.name || a.assignedGraderId === currentUser.id) &&
                         !["completed", "offered", "rejected"].includes(a.status)
                     ).length
                   }
@@ -1667,29 +1843,33 @@ export default function Dashboard() {
               Global Rubric Manager
             </button>
 
-            <button
-              onClick={() => setActiveTab("emails")}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                activeTab === "emails"
-                  ? "bg-white text-slate-900 border border-slate-200/50 shadow-sm"
-                  : "text-slate-655 hover:bg-slate-200/40 hover:text-slate-900"
-              }`}
-            >
-              <Mail className="h-4 w-4 text-slate-555" />
-              Email Automation Control
-            </button>
+            {userRole === "ADMIN" && (
+              <button
+                onClick={() => setActiveTab("emails")}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === "emails"
+                    ? "bg-white text-slate-900 border border-slate-200/50 shadow-sm"
+                    : "text-slate-655 hover:bg-slate-200/40 hover:text-slate-900"
+                }`}
+              >
+                <Mail className="h-4 w-4 text-slate-555" />
+                Email Automation Control
+              </button>
+            )}
 
-            <button
-              onClick={() => setActiveTab("analytics")}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                activeTab === "analytics"
-                  ? "bg-white text-slate-900 border border-slate-200/50 shadow-sm"
-                  : "text-slate-655 hover:bg-slate-200/40 hover:text-slate-900"
-              }`}
-            >
-              <BarChart3 className="h-4 w-4 text-slate-550" />
-              Cohort Analytics
-            </button>
+            {userRole === "ADMIN" && (
+              <button
+                onClick={() => setActiveTab("analytics")}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === "analytics"
+                    ? "bg-white text-slate-900 border border-slate-200/50 shadow-sm"
+                    : "text-slate-655 hover:bg-slate-200/40 hover:text-slate-900"
+                }`}
+              >
+                <BarChart3 className="h-4 w-4 text-slate-550" />
+                Cohort Analytics
+              </button>
+            )}
           </nav>
         </div>
 
@@ -1905,7 +2085,9 @@ export default function Dashboard() {
                               }
                             }}
                             onAssign={(id) => setAssigningApplicantId(id)}
+                            onUnassign={handleUnassignGrader}
                             onSendOffer={handleSendOffer}
+                            onRevokeOffer={handleRevokeOffer}
                             onSendReject={handleSendReject}
                             onUngrade={handleUngradeApplicant}
                           />
@@ -1925,10 +2107,7 @@ export default function Dashboard() {
                                 </button>
                               </div>
                               <div className="space-y-1 max-h-40 overflow-y-auto">
-                                {(dbProfiles.length > 0
-                                  ? dbProfiles.filter((p) => p.role === "GRADER")
-                                  : INITIAL_GRADERS.filter((g) => g.role === "GRADER")
-                                ).map((grader) => (
+                                {gradersList.map((grader) => (
                                   <button
                                     key={grader.id}
                                     onClick={() =>
@@ -2133,44 +2312,122 @@ export default function Dashboard() {
 
           {/* TAB: INTERVIEW SCHEDULING (ADMIN ONLY) */}
           {activeTab === "interviews" && userRole === "ADMIN" && (
-            <div className="space-y-6 max-w-5xl">
-              <div>
-                <h3 className="text-lg font-bold text-slate-800">
-                  Round 2 Interview Scheduler &bull; September 15, 2026
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Top Management Consulting candidates are assigned to the earlier Morning Block, and Healthcare Consulting candidates to the Mid-Day Block. Reschedule by changing the time dropdown inside each card.
-                </p>
+            <div className="space-y-6 max-w-6xl">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <Calendar className="h-5 w-5 text-indigo-600" />
+                    Round 2 Global Interview Scheduler
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Only graded candidates who have received an offer (via <span className="font-bold text-blue-600">Send Offer</span> in All Applicants) are eligible for interview scheduling.
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="text-right">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Eligible Candidates</span>
+                    <span className="text-base font-black text-purple-700">
+                      {applicants.filter((a) => a.status === "offered" || (a.status === "completed" && a.score !== undefined)).length} Total
+                    </span>
+                  </div>
+                </div>
               </div>
 
-              {/* Columns for Blocks */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+              {/* SECTION: OFFERED CANDIDATES QUEUE (UNSCHEDULED) */}
+              <div className="rounded-2xl border border-purple-200/80 bg-purple-50/30 p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-purple-600" />
+                    <h4 className="text-sm font-bold text-slate-800">
+                      Offered Candidates Queue (Needs Scheduling)
+                    </h4>
+                  </div>
+                  <span className="text-[10px] font-bold text-purple-700 bg-purple-100/80 px-2.5 py-0.5 rounded-full border border-purple-200">
+                    {applicants.filter((a) => (a.status === "offered" || a.status === "completed") && !a.scheduledTime).length} Pending Slot
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  {applicants.filter((a) => (a.status === "offered" || a.status === "completed") && !a.scheduledTime).length > 0 ? (
+                    applicants
+                      .filter((a) => (a.status === "offered" || a.status === "completed") && !a.scheduledTime)
+                      .map((app) => (
+                        <div key={app.id} className="p-3.5 rounded-xl border border-purple-200/60 bg-white shadow-sm space-y-2">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <h5 className="text-xs font-bold text-slate-800">{app.name}</h5>
+                              <span className="text-[9px] text-slate-400 font-mono">#{app.hashId}</span>
+                            </div>
+                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-200">
+                              {app.cohort}
+                            </span>
+                          </div>
+                          {app.score !== undefined && (
+                            <div className="text-[10px] font-semibold text-slate-600 flex items-center gap-1">
+                              <Award className="h-3 w-3 text-amber-500" /> Score: <span className="font-bold text-slate-800">{app.score.toFixed(1)}/25.0</span>
+                            </div>
+                          )}
+                          <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-1">
+                            <button
+                              onClick={() => handleRevokeOffer(app.id)}
+                              className="text-[9px] font-bold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5 transition-colors cursor-pointer"
+                              title="Revoke offer and return to graded status"
+                            >
+                              Revoke Offer
+                            </button>
+                            <select
+                              value=""
+                              onChange={(e) => {
+                                if (e.target.value === "revoke_offer") {
+                                  handleRevokeOffer(app.id);
+                                } else if (e.target.value) {
+                                  handleRescheduleApplicant(app.id, e.target.value as any);
+                                }
+                              }}
+                              className="text-[10px] font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded px-1.5 py-0.5 outline-none cursor-pointer"
+                            >
+                              <option value="">Assign Slot...</option>
+                              <option value="09:00 AM">9:00 AM - 10:00 AM</option>
+                              <option value="10:30 AM">10:30 AM - 11:30 AM</option>
+                              <option value="01:00 PM">1:00 PM - 2:00 PM</option>
+                              <option value="revoke_offer">Revoke Offer (Return to Graded)</option>
+                            </select>
+                          </div>
+                        </div>
+                      ))
+                  ) : (
+                    <div className="col-span-full py-6 text-center text-slate-500 text-xs italic bg-white/60 rounded-xl border border-purple-100">
+                      No unscheduled offered candidates. To schedule interviews, go to <span className="font-bold text-slate-700">All Applicants</span>, find graded candidates, and click <span className="font-bold text-blue-600">Send Offer</span>.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Columns for Scheduled Time Blocks */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
                 
                 {/* MORNING BLOCK Column */}
-                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                     <div>
-                      <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                        <span className="h-2.5 w-2.5 rounded-full bg-indigo-500 animate-pulse" />
-                        Morning Block: 9:00 AM - 10:00 AM
+                      <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse" />
+                        Morning: 9:00 AM - 10:00 AM
                       </h4>
-                      <p className="text-[10px] text-slate-500 mt-0.5">
-                        Assigned: Top Management Consulting Candidates
-                      </p>
                     </div>
-                    <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-100">
-                      {applicants.filter((a) => a.scheduledTime === "09:00 AM").length} Scheduled
+                    <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                      {applicants.filter((a) => (a.status === "offered" || a.status === "completed") && a.scheduledTime === "09:00 AM").length} Scheduled
                     </span>
                   </div>
 
-                  <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
-                    {applicants.filter((a) => a.scheduledTime === "09:00 AM").length > 0 ? (
+                  <div className="space-y-3 max-h-[450px] overflow-y-auto pr-1">
+                    {applicants.filter((a) => (a.status === "offered" || a.status === "completed") && a.scheduledTime === "09:00 AM").length > 0 ? (
                       applicants
-                        .filter((a) => a.scheduledTime === "09:00 AM")
+                        .filter((a) => (a.status === "offered" || a.status === "completed") && a.scheduledTime === "09:00 AM")
                         .map((app) => (
                           <div
                             key={app.id}
-                            className="p-4 rounded-xl border border-slate-200 bg-slate-55/50 hover:border-slate-350 hover:bg-white transition-all shadow-sm space-y-2.5"
+                            className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 hover:border-indigo-200 hover:bg-white transition-all shadow-sm space-y-2"
                           >
                             <div className="flex justify-between items-start">
                               <div>
@@ -2183,28 +2440,106 @@ export default function Dashboard() {
                             </div>
 
                             {app.score !== undefined && (
-                              <div className="text-[10px] font-semibold text-slate-655 flex items-center gap-1">
-                                <Award className="h-3.5 w-3.5 text-amber-505" /> Score: <span className="font-bold text-slate-800">{app.score.toFixed(1)}/25.0</span>
+                              <div className="text-[10px] font-semibold text-slate-600 flex items-center gap-1">
+                                <Award className="h-3 w-3 text-amber-500" /> Score: <span className="font-bold text-slate-800">{app.score.toFixed(1)}/25.0</span>
                               </div>
                             )}
 
-                            {/* Reschedule option */}
-                            <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 mt-1">
+                            <div className="flex items-center justify-between pt-2 border-t border-slate-100 mt-1">
                               <span className="text-[9px] text-slate-400 font-bold uppercase">Timing:</span>
                               <select
                                 value="09:00 AM"
                                 onChange={(e) => {
                                   const val = e.target.value;
-                                  handleRescheduleApplicant(
-                                    app.id,
-                                    val === "unscheduled" ? null : (val as any)
-                                  );
+                                  if (val === "revoke_offer") {
+                                    handleRevokeOffer(app.id);
+                                  } else {
+                                    handleRescheduleApplicant(
+                                      app.id,
+                                      val === "unscheduled" ? null : (val as any)
+                                    );
+                                  }
                                 }}
                                 className="text-[10px] font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 outline-none cursor-pointer"
                               >
                                 <option value="09:00 AM">9:00 AM - 10:00 AM</option>
                                 <option value="10:30 AM">10:30 AM - 11:30 AM</option>
-                                <option value="unscheduled">Unschedule</option>
+                                <option value="01:00 PM">1:00 PM - 2:00 PM</option>
+                                <option value="unscheduled">Unschedule to Queue</option>
+                                <option value="revoke_offer">Revoke Offer (Return to Graded)</option>
+                              </select>
+                            </div>
+                          </div>
+                        ))
+                    ) : (
+                      <p className="text-xs text-slate-400 italic text-center py-6">
+                        No candidates scheduled in this block.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* MID-DAY BLOCK Column */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                        Mid-Day: 10:30 AM - 11:30 AM
+                      </h4>
+                    </div>
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                      {applicants.filter((a) => (a.status === "offered" || a.status === "completed") && a.scheduledTime === "10:30 AM").length} Scheduled
+                    </span>
+                  </div>
+
+                  <div className="space-y-3 max-h-[450px] overflow-y-auto pr-1">
+                    {applicants.filter((a) => (a.status === "offered" || a.status === "completed") && a.scheduledTime === "10:30 AM").length > 0 ? (
+                      applicants
+                        .filter((a) => (a.status === "offered" || a.status === "completed") && a.scheduledTime === "10:30 AM")
+                        .map((app) => (
+                          <div
+                            key={app.id}
+                            className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 hover:border-emerald-200 hover:bg-white transition-all shadow-sm space-y-2"
+                          >
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <h5 className="text-xs font-bold text-slate-800">{app.name}</h5>
+                                <span className="text-[9px] text-slate-400 font-mono">#{app.hashId}</span>
+                              </div>
+                              <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-100">
+                                {app.cohort}
+                              </span>
+                            </div>
+
+                            {app.score !== undefined && (
+                              <div className="text-[10px] font-semibold text-slate-600 flex items-center gap-1">
+                                <Award className="h-3 w-3 text-amber-500" /> Score: <span className="font-bold text-slate-800">{app.score.toFixed(1)}/25.0</span>
+                              </div>
+                            )}
+
+                            <div className="flex items-center justify-between pt-2 border-t border-slate-100 mt-1">
+                              <span className="text-[9px] text-slate-400 font-bold uppercase">Timing:</span>
+                              <select
+                                value="10:30 AM"
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val === "revoke_offer") {
+                                    handleRevokeOffer(app.id);
+                                  } else {
+                                    handleRescheduleApplicant(
+                                      app.id,
+                                      val === "unscheduled" ? null : (val as any)
+                                    );
+                                  }
+                                }}
+                                className="text-[10px] font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 outline-none cursor-pointer"
+                              >
+                                <option value="09:00 AM">9:00 AM - 10:00 AM</option>
+                                <option value="10:30 AM">10:30 AM - 11:30 AM</option>
+                                <option value="01:00 PM">1:00 PM - 2:00 PM</option>
+                                <option value="unscheduled">Unschedule to Queue</option>
+                                <option value="revoke_offer">Revoke Offer (Return to Graded)</option>
                               </select>
                             </div>
                           </div>
@@ -2218,64 +2553,66 @@ export default function Dashboard() {
                 </div>
 
                 {/* AFTERNOON BLOCK Column */}
-                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                     <div>
-                      <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                        <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                        Mid-Day Block: 10:30 AM - 11:30 AM
+                      <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-purple-500 animate-pulse" />
+                        Afternoon: 1:00 PM - 2:00 PM
                       </h4>
-                      <p className="text-[10px] text-slate-500 mt-0.5">
-                        Assigned: Healthcare Consulting Candidates
-                      </p>
                     </div>
-                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-100">
-                      {applicants.filter((a) => a.scheduledTime === "10:30 AM").length} Scheduled
+                    <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-100">
+                      {applicants.filter((a) => (a.status === "offered" || a.status === "completed") && a.scheduledTime === "01:00 PM").length} Scheduled
                     </span>
                   </div>
 
-                  <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
-                    {applicants.filter((a) => a.scheduledTime === "10:30 AM").length > 0 ? (
+                  <div className="space-y-3 max-h-[450px] overflow-y-auto pr-1">
+                    {applicants.filter((a) => (a.status === "offered" || a.status === "completed") && a.scheduledTime === "01:00 PM").length > 0 ? (
                       applicants
-                        .filter((a) => a.scheduledTime === "10:30 AM")
+                        .filter((a) => (a.status === "offered" || a.status === "completed") && a.scheduledTime === "01:00 PM")
                         .map((app) => (
                           <div
                             key={app.id}
-                            className="p-4 rounded-xl border border-slate-200 bg-slate-55/50 hover:border-slate-355 hover:bg-white transition-all shadow-sm space-y-2.5"
+                            className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 hover:border-purple-200 hover:bg-white transition-all shadow-sm space-y-2"
                           >
                             <div className="flex justify-between items-start">
                               <div>
                                 <h5 className="text-xs font-bold text-slate-800">{app.name}</h5>
                                 <span className="text-[9px] text-slate-400 font-mono">#{app.hashId}</span>
                               </div>
-                              <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-55 text-emerald-800 border border-emerald-100">
+                              <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-purple-50 text-purple-800 border border-purple-100">
                                 {app.cohort}
                               </span>
                             </div>
 
                             {app.score !== undefined && (
-                              <div className="text-[10px] font-semibold text-slate-655 flex items-center gap-1">
-                                <Award className="h-3.5 w-3.5 text-amber-55" /> Score: <span className="font-bold text-slate-800">{app.score.toFixed(1)}/25.0</span>
+                              <div className="text-[10px] font-semibold text-slate-600 flex items-center gap-1">
+                                <Award className="h-3 w-3 text-amber-500" /> Score: <span className="font-bold text-slate-800">{app.score.toFixed(1)}/25.0</span>
                               </div>
                             )}
 
-                            {/* Reschedule option */}
-                            <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 mt-1">
+                            <div className="flex items-center justify-between pt-2 border-t border-slate-100 mt-1">
                               <span className="text-[9px] text-slate-400 font-bold uppercase">Timing:</span>
                               <select
-                                value="10:30 AM"
+                                value="01:00 PM"
                                 onChange={(e) => {
                                   const val = e.target.value;
-                                  handleRescheduleApplicant(
-                                    app.id,
-                                    val === "unscheduled" ? null : (val as any)
-                                  );
+                                  if (val === "revoke_offer") {
+                                    handleRevokeOffer(app.id);
+                                  } else {
+                                    handleRescheduleApplicant(
+                                      app.id,
+                                      val === "unscheduled" ? null : (val as any)
+                                    );
+                                  }
                                 }}
-                                className="text-[10px] font-bold text-slate-700 bg-white hover:bg-slate-55 border border-slate-200 rounded px-1.5 py-0.5 outline-none cursor-pointer"
+                                className="text-[10px] font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 outline-none cursor-pointer"
                               >
                                 <option value="09:00 AM">9:00 AM - 10:00 AM</option>
                                 <option value="10:30 AM">10:30 AM - 11:30 AM</option>
-                                <option value="unscheduled">Unschedule</option>
+                                <option value="01:00 PM">1:00 PM - 2:00 PM</option>
+                                <option value="unscheduled">Unschedule to Queue</option>
+                                <option value="revoke_offer">Revoke Offer (Return to Graded)</option>
                               </select>
                             </div>
                           </div>

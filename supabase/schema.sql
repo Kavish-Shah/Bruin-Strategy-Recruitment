@@ -26,6 +26,8 @@ create table public.applicants (
   resume_url text,
   cohort text not null, -- e.g., 'Freshman Management', 'Upperclassman Management'
   status applicant_status not null default 'unassigned',
+  assigned_grader_id uuid references public.profiles(id) on delete set null,
+  scheduled_time text,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 

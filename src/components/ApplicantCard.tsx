@@ -2,6 +2,7 @@ import React from "react";
 import {
   FileText,
   UserPlus,
+  UserMinus,
   Eye,
   CheckCircle,
   XCircle,
@@ -42,8 +43,9 @@ export interface Applicant {
     essay?: number;
   };
   hasResume: boolean;
+  assignedGraderId?: string;
   assignedGraderName?: string;
-  scheduledTime?: "09:00 AM" | "10:30 AM" | null;
+  scheduledTime?: "09:00 AM" | "10:30 AM" | "01:00 PM" | null;
   interviewComments?: InterviewComment[];
   shortAnswer?: string;
 }
@@ -53,7 +55,9 @@ interface ApplicantCardProps {
   isAdmin: boolean;
   onView: (id: string) => void;
   onAssign?: (id: string) => void;
+  onUnassign?: (id: string) => void;
   onSendOffer?: (id: string) => void;
+  onRevokeOffer?: (id: string) => void;
   onSendReject?: (id: string) => void;
   onUngrade?: (id: string) => void;
 }
@@ -63,7 +67,9 @@ export default function ApplicantCard({
   isAdmin,
   onView,
   onAssign,
+  onUnassign,
   onSendOffer,
+  onRevokeOffer,
   onSendReject,
   onUngrade,
 }: ApplicantCardProps) {
@@ -138,9 +144,13 @@ export default function ApplicantCard({
                 Resume.pdf
               </span>
             )}
-            {applicant.assignedGraderName && (
-              <span className="rounded-md bg-blue-500/5 px-2 py-0.5 text-slate-500 dark:text-slate-400">
-                Grader: <span className="font-medium text-slate-700 dark:text-slate-300">{applicant.assignedGraderName}</span>
+            {applicant.assignedGraderName ? (
+              <span className="rounded-md bg-blue-500/10 px-2 py-0.5 text-blue-700 dark:text-blue-400 font-semibold">
+                Grader: <span className="font-bold">{applicant.assignedGraderName}</span>
+              </span>
+            ) : (
+              <span className="rounded-md bg-slate-500/10 px-2 py-0.5 text-slate-500 dark:text-slate-400 font-medium">
+                Unassigned
               </span>
             )}
           </div>
@@ -190,8 +200,19 @@ export default function ApplicantCard({
                 onClick={() => onAssign(applicant.id)}
                 className="flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 transition-colors cursor-pointer"
               >
-                <UserPlus className="h-3.5 w-3.5" />
+                <UserPlus className="h-3.5 w-3.5 text-blue-600" />
                 Assign
+              </button>
+            )}
+
+            {isAdmin && (applicant.status === "assigned" || applicant.assignedGraderName) && onUnassign && (
+              <button
+                onClick={() => onUnassign(applicant.id)}
+                className="flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:border-slate-800 dark:bg-slate-950 dark:text-rose-400 dark:hover:bg-rose-950/20 transition-colors cursor-pointer"
+                title="Unassign grader and return candidate to unassigned status"
+              >
+                <UserMinus className="h-3.5 w-3.5 text-rose-500" />
+                Unassign
               </button>
             )}
 
@@ -218,9 +239,22 @@ export default function ApplicantCard({
               )}
 
             {applicant.status === "offered" && (
-              <span className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-purple-50 px-3.5 text-xs font-bold text-purple-700 dark:bg-purple-950/20 dark:text-purple-400 border border-purple-100 dark:border-purple-950">
-                Offer Sent
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-purple-50 px-3 py-0.5 text-xs font-bold text-purple-700 dark:bg-purple-950/20 dark:text-purple-400 border border-purple-100 dark:border-purple-950 shadow-sm">
+                  <CheckCircle className="h-3.5 w-3.5 text-purple-600" />
+                  Offer Extended &bull; Eligible
+                </span>
+                {isAdmin && onRevokeOffer && (
+                  <button
+                    onClick={() => onRevokeOffer(applicant.id)}
+                    className="flex h-9 items-center gap-1 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 px-2.5 text-xs font-semibold text-amber-700 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-400 dark:hover:bg-amber-950/40 transition-colors cursor-pointer"
+                    title="Revoke offer and return candidate to graded status (removes candidate from interview scheduling)"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    Revoke Offer
+                  </button>
+                )}
+              </div>
             )}
 
             {applicant.status === "rejected" && (
