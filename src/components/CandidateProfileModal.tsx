@@ -71,6 +71,8 @@ export default function CandidateProfileModal({
   const [primaryTimeInput, setPrimaryTimeInput] = useState(applicant.scheduledTime || "");
   const [fallbackTimeInput, setFallbackTimeInput] = useState(applicant.fallbackTime || "");
 
+  const embedUrl = useMemo(() => getDriveEmbedUrl(applicant.resumeUrl), [applicant.resumeUrl]);
+  
   const handleSaveTimes = async () => {
     if (onUpdateScheduledTimes) {
       await onUpdateScheduledTimes(applicant.id, primaryTimeInput || null, fallbackTimeInput || null);
