@@ -15,6 +15,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Bruin Strategy | Recruitment Dashboard",
   description: "Recruitment and evaluation pipeline dashboard for Bruin Strategy consulting club.",
+  icons: {
+    icon: "/bsn_paw.png",
+    shortcut: "/bsn_paw.png",
+    apple: "/bsn_paw.png",
+  },
 };
 
 export default function RootLayout({

@@ -49,35 +49,35 @@ const INITIAL_GRADERS: Grader[] = [
     name: "John Doe",
     email: "john.doe@bruinstrategy.org",
     role: "GRADER",
-    avatar: "https://api.dicebear.com/7.x/adventurer/svg?seed=John",
+    avatar: "/bruinstrategylogo.jpeg",
   },
   {
     id: "g2",
     name: "Jane Smith",
     email: "jane.smith@bruinstrategy.org",
     role: "GRADER",
-    avatar: "https://api.dicebear.com/7.x/adventurer/svg?seed=Jane",
+    avatar: "/bruinstrategylogo.jpeg",
   },
   {
     id: "g3",
     name: "Alex Chen",
     email: "alex.chen@bruinstrategy.org",
     role: "GRADER",
-    avatar: "https://api.dicebear.com/7.x/adventurer/svg?seed=Alex",
+    avatar: "/bruinstrategylogo.jpeg",
   },
   {
     id: "g4",
     name: "Emily Taylor",
     email: "emily.taylor@bruinstrategy.org",
     role: "GRADER",
-    avatar: "https://api.dicebear.com/7.x/adventurer/svg?seed=Emily",
+    avatar: "/bruinstrategylogo.jpeg",
   },
   {
     id: "g5",
     name: "Marcus Vance",
     email: "marcus.vance@bruinstrategy.org",
     role: "ADMIN",
-    avatar: "https://api.dicebear.com/7.x/adventurer/svg?seed=Marcus",
+    avatar: "/bruinstrategylogo.jpeg",
   },
 ];
 
@@ -150,10 +150,20 @@ export default function Dashboard() {
 
     let isMounted = true;
 
-    // Get current session safely
+    // Get current session safely with stale token recovery
     supabase.auth
       .getSession()
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) {
+          // Clear stale or invalid refresh token automatically
+          supabase.auth.signOut().catch(() => {});
+          if (isMounted) {
+            setSession(null);
+            setUserRole("ADMIN");
+            setLoadingAuth(false);
+          }
+          return;
+        }
         if (!isMounted) return;
         const session = data?.session || null;
         setSession(session);
@@ -162,23 +172,26 @@ export default function Dashboard() {
         }
         setLoadingAuth(false);
       })
-      .catch((err) => {
+      .catch(() => {
         if (!isMounted) return;
-        console.warn("Supabase auth connection failed, falling back gracefully:", err);
+        supabase.auth.signOut().catch(() => {});
+        setSession(null);
+        setUserRole("ADMIN");
         setLoadingAuth(false);
       });
 
-    // Listen to changes
+    // Listen to changes safely
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (!isMounted) return;
-      setSession(session);
-      if (session) {
-        fetchUserRole(session.user.id);
-      } else {
+      if (event === "SIGNED_OUT" || !session) {
+        setSession(null);
         setUserRole("ADMIN");
         setProfileName("Admin Board Member");
+      } else {
+        setSession(session);
+        fetchUserRole(session.user.id);
       }
     });
 
@@ -468,7 +481,7 @@ export default function Dashboard() {
           name: p.name,
           email: p.email || `${p.name.toLowerCase().replace(/\s+/g, ".")}@bruinstrategy.org`,
           role: (p.role === "ADMIN" ? "ADMIN" : "GRADER") as "ADMIN" | "GRADER",
-          avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(p.name)}`,
+          avatar: "/bruinstrategylogo.jpeg",
         }));
       }
       return [];
@@ -487,7 +500,7 @@ export default function Dashboard() {
       name,
       email,
       role: userRole,
-      avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(name)}`,
+      avatar: "/bruinstrategylogo.jpeg",
     };
   }, [profileName, session, userRole]);
 
@@ -1830,46 +1843,7 @@ export default function Dashboard() {
             />
           </div>
 
-          {/* SYSTEM ROLE switcher - Only accessible to ADMIN users */}
-          {userRole === "ADMIN" && (
-            <div className="p-4 mx-3 my-4 rounded-2xl border border-slate-200/60 bg-white shadow-sm">
-              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-2 text-center">
-                SYSTEM ROLE
-              </span>
-              <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl">
-                <button
-                  onClick={() => {
-                    setUserRole("ADMIN");
-                    setActiveTab("applicant_profiles");
-                    setStatusFilter("all");
-                    showToast("Switched system view to Admin", "info");
-                  }}
-                  className={`py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                    userRole === "ADMIN"
-                      ? "bg-white text-slate-900 shadow-sm border border-slate-200/20"
-                      : "text-slate-500 hover:text-slate-800"
-                  }`}
-                >
-                  Admin
-                </button>
-                <button
-                  onClick={() => {
-                    setUserRole("GRADER");
-                    setActiveTab("my_assignments");
-                    setStatusFilter("all");
-                    showToast(`Switched system view to Grader (${gradersList.find(g => g.id === activeGraderId)?.name || "Grader"})`, "info");
-                  }}
-                  className={`py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                    (userRole as string) === "GRADER"
-                      ? "bg-white text-slate-900 shadow-sm border border-slate-200/20"
-                      : "text-slate-500 hover:text-slate-800"
-                  }`}
-                >
-                  Grader
-                </button>
-              </div>
-            </div>
-          )}
+
 
           {/* Navigation Menu */}
           <nav className="px-3 space-y-1">
@@ -1930,7 +1904,7 @@ export default function Dashboard() {
                   }`}
                 >
                   <Calendar className="h-4 w-4 text-indigo-600" />
-                  Coffee Chats Scheduler
+                  Coffee Chats
                 </button>
 
                 <button
@@ -1995,7 +1969,7 @@ export default function Dashboard() {
             <img
               src={currentUser.avatar}
               alt={currentUser.name}
-              className="h-10 w-10 rounded-full border border-slate-200 bg-slate-55 p-0.5"
+              className="h-10 w-10 rounded-full border border-slate-200 bg-white p-0.5 object-cover shrink-0 shadow-2xs"
             />
             <div className="overflow-hidden">
               <h4 className="text-xs font-bold text-slate-800 truncate">
@@ -2395,8 +2369,8 @@ export default function Dashboard() {
                           <p className="text-[10px] text-slate-500 mt-0.5">
                             Set up scheduling integrations for Round 2.
                           </p>
-                          <span className="inline-block text-[9px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded mt-1.5 border border-blue-100">
-                            Queue: {cohortStats.completed - cohortStats.offered} candidates ready
+                          <span className="inline-block text-[9px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.2 rounded mt-1.5 border border-blue-100">
+                            {cohortStats.interviewInvites} candidates in Coffee Chats
                           </span>
                         </div>
                       </div>
@@ -2429,7 +2403,7 @@ export default function Dashboard() {
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs">
                 <div>
                   <h3 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
-                    ☕ Coffee Chats Scheduler
+                    ☕ Coffee Chats
                   </h3>
                   <p className="text-xs text-slate-500 mt-1">
                     Fall 2026 Recruitment &bull; 120 Total Candidates (40 per Time Slot &bull; 8 Tables per Slot, 3-6 per table)
