@@ -11,6 +11,7 @@ import {
   ChevronRight,
   TrendingUp,
   RotateCcw,
+  Calendar,
 } from "lucide-react";
 
 export interface InterviewComment {
@@ -27,11 +28,13 @@ export interface Applicant {
   hashId: string;
   submissionDate: string;
   cohort: string;
+  year?: string;
   status:
     | "unassigned"
     | "assigned"
     | "in_progress"
     | "completed"
+    | "interview"
     | "offered"
     | "rejected";
   score?: number;
@@ -43,9 +46,14 @@ export interface Applicant {
     essay?: number;
   };
   hasResume: boolean;
+  resumeUrl?: string;
   assignedGraderId?: string;
   assignedGraderName?: string;
-  scheduledTime?: "09:00 AM" | "10:30 AM" | "01:00 PM" | null;
+  scheduledTime?: string | null;
+  fallbackTime?: string | null;
+  studentId?: string;
+  tableNumber?: number;
+  formResponses?: any;
   interviewComments?: InterviewComment[];
   shortAnswer?: string;
 }
@@ -56,9 +64,12 @@ interface ApplicantCardProps {
   onView: (id: string) => void;
   onAssign?: (id: string) => void;
   onUnassign?: (id: string) => void;
+  onSendInterview?: (id: string) => void;
+  onRescindInterview?: (id: string) => void;
   onSendOffer?: (id: string) => void;
   onRevokeOffer?: (id: string) => void;
   onSendReject?: (id: string) => void;
+  onUndoRejection?: (id: string) => void;
   onUngrade?: (id: string) => void;
 }
 
@@ -68,215 +79,206 @@ export default function ApplicantCard({
   onView,
   onAssign,
   onUnassign,
+  onSendInterview,
+  onRescindInterview,
   onSendOffer,
   onRevokeOffer,
   onSendReject,
+  onUndoRejection,
   onUngrade,
 }: ApplicantCardProps) {
   const getStatusStyle = (status: string) => {
     switch (status) {
       case "completed":
-        return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20";
+        return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 font-bold";
+      case "interview":
+        return "bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border-indigo-500/20 font-bold";
       case "in_progress":
         return "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20";
       case "assigned":
         return "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20";
       case "offered":
-        return "bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/20";
+        return "bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/20 font-bold";
       case "rejected":
         return "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20";
       default:
-        return "bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/10";
+        return "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700";
     }
   };
 
   const formattedStatus = applicant.status.replace("_", " ");
 
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white/70 p-5 shadow-sm transition-all duration-300 hover:border-slate-300 dark:border-slate-800/80 dark:bg-slate-900/40 dark:hover:border-slate-700 backdrop-blur-md">
-      {/* Decorative colored left edge depending on status */}
-      <div
-        className={`absolute left-0 top-0 bottom-0 w-1 transition-all duration-300 ${
-          applicant.status === "completed"
-            ? "bg-emerald-500"
-            : applicant.status === "in_progress"
-            ? "bg-amber-500"
-            : applicant.status === "offered"
-            ? "bg-purple-500"
-            : applicant.status === "rejected"
-            ? "bg-rose-500"
-            : applicant.status === "assigned"
-            ? "bg-blue-500"
-            : "bg-slate-300 dark:bg-slate-700"
-        }`}
-      />
+    <div className="group relative flex flex-col xl:flex-row xl:items-center justify-between gap-3.5 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs hover:shadow-md dark:border-slate-800 dark:bg-slate-900 transition-all">
+      {/* Left Side: Applicant Info & Integrated Score Badges */}
+      <div className="flex items-center gap-2.5 min-w-0 flex-1 flex-wrap">
+        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 shrink-0">
+          {applicant.name}
+        </h3>
 
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        {/* Left Side: Applicant Info */}
-        <div className="flex flex-col gap-2.5">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
-              {applicant.name}
-            </h3>
-            <span className="font-mono text-xs text-slate-400 dark:text-slate-500">
-              #{applicant.hashId}
-            </span>
-            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-              {applicant.cohort}
-            </span>
-            <span
-              className={`rounded-full border px-2 py-0.5 text-xs font-semibold capitalize ${getStatusStyle(
-                applicant.status
-              )}`}
-            >
-              {formattedStatus}
-            </span>
-          </div>
+        {applicant.studentId && (
+          <span className="font-mono text-xs text-slate-500 font-semibold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md shrink-0">
+            ID: {applicant.studentId}
+          </span>
+        )}
 
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
-            <span className="flex items-center gap-1">
-              <Clock className="h-3.5 w-3.5 text-slate-400" />
-              {applicant.submissionDate}
-            </span>
-            {applicant.hasResume && (
-              <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
-                <FileText className="h-3.5 w-3.5" />
-                Resume.pdf
-              </span>
-            )}
-            {applicant.assignedGraderName ? (
-              <span className="rounded-md bg-blue-500/10 px-2 py-0.5 text-blue-700 dark:text-blue-400 font-semibold">
-                Grader: <span className="font-bold">{applicant.assignedGraderName}</span>
-              </span>
-            ) : (
-              <span className="rounded-md bg-slate-500/10 px-2 py-0.5 text-slate-500 dark:text-slate-400 font-medium">
-                Unassigned
-              </span>
-            )}
-          </div>
-        </div>
+        {applicant.year && (
+          <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-bold text-indigo-700 border border-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800/40 shrink-0">
+            🎓 {applicant.year}
+          </span>
+        )}
 
-        {/* Right Side: Score, Rank & Actions */}
-        <div className="flex flex-wrap items-center justify-between gap-4 border-t border-slate-100 pt-3 lg:border-t-0 lg:pt-0 lg:justify-end">
-          {/* Score & Rank Group */}
-          <div className="flex items-center gap-6">
-            {/* Score Display */}
-            <div className="text-right">
-              <div className="text-2xl font-black text-slate-800 dark:text-slate-100">
-                {applicant.score !== undefined ? applicant.score.toFixed(1) : "--"}
-                <span className="text-xs text-slate-400 dark:text-slate-500 font-normal">
-                  /25
-                </span>
-              </div>
-              <div className="flex items-center justify-end gap-1 text-xs text-slate-400 dark:text-slate-500 font-medium">
-                Score <TrendingUp className="h-3 w-3" />
-              </div>
-            </div>
+        <span
+          className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold capitalize shrink-0 ${getStatusStyle(
+            applicant.status
+          )}`}
+        >
+          {formattedStatus}
+        </span>
 
-            {applicant.rank && (
-              <div className="text-right">
-                <div className="flex items-center justify-end gap-1 text-2xl font-black text-slate-800 dark:text-slate-100">
-                  <Award className="h-5 w-5 text-amber-500" /> #{applicant.rank}
-                </div>
-                <div className="text-xs text-slate-400 dark:text-slate-500 font-medium">
-                  Cohort Rank
-                </div>
-              </div>
-            )}
-          </div>
+        {/* Score & Rank Badges - Integrated inline so they NEVER overlap */}
+        {applicant.score !== undefined && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/50 px-3 py-0.5 text-xs font-black text-emerald-800 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/60 shrink-0">
+            <TrendingUp className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+            Score: {applicant.score.toFixed(1)}/25
+          </span>
+        )}
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => onView(applicant.id)}
-              className="flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 transition-colors cursor-pointer"
-            >
-              <Eye className="h-3.5 w-3.5" />
-              View
-            </button>
+        {applicant.rank && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 dark:bg-amber-950/40 px-2.5 py-0.5 text-xs font-bold text-amber-800 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/60 shrink-0">
+            <Award className="h-3 w-3 text-amber-500" /> #{applicant.rank}
+          </span>
+        )}
 
-            {isAdmin && applicant.status === "unassigned" && onAssign && (
-              <button
-                onClick={() => onAssign(applicant.id)}
-                className="flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 transition-colors cursor-pointer"
-              >
-                <UserPlus className="h-3.5 w-3.5 text-blue-600" />
-                Assign
-              </button>
-            )}
+        {applicant.assignedGraderName && (
+          <span className="rounded-md bg-blue-500/10 px-2 py-0.5 text-xs text-blue-700 dark:text-blue-400 font-semibold shrink-0">
+            Grader: {applicant.assignedGraderName}
+          </span>
+        )}
 
-            {isAdmin && (applicant.status === "assigned" || applicant.assignedGraderName) && onUnassign && (
-              <button
-                onClick={() => onUnassign(applicant.id)}
-                className="flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:border-slate-800 dark:bg-slate-950 dark:text-rose-400 dark:hover:bg-rose-950/20 transition-colors cursor-pointer"
-                title="Unassign grader and return candidate to unassigned status"
-              >
-                <UserMinus className="h-3.5 w-3.5 text-rose-500" />
-                Unassign
-              </button>
-            )}
+        {applicant.scheduledTime && (
+          <span className="rounded-md bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300 font-bold px-2 py-0.5 text-xs flex items-center gap-1 shrink-0">
+            <Calendar className="h-3 w-3" /> Slot: {applicant.scheduledTime}
+          </span>
+        )}
 
-            {isAdmin &&
-              applicant.status === "completed" &&
-              onSendOffer &&
-              onSendReject && (
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => onSendReject(applicant.id)}
-                    className="flex h-9 items-center gap-1 rounded-xl bg-slate-100 hover:bg-rose-50 px-3.5 text-xs font-semibold text-rose-600 hover:text-rose-700 dark:bg-slate-800 dark:hover:bg-rose-500/10 dark:text-rose-400 dark:hover:text-rose-300 transition-colors cursor-pointer"
-                  >
-                    <XCircle className="h-3.5 w-3.5" />
-                    Reject
-                  </button>
-                  <button
-                    onClick={() => onSendOffer(applicant.id)}
-                    className="flex h-9 items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 text-xs font-semibold text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 transition-all shadow-sm shadow-blue-500/20 cursor-pointer"
-                  >
-                    <CheckCircle className="h-3.5 w-3.5" />
-                    Send Offer
-                  </button>
-                </div>
-              )}
+        {applicant.fallbackTime && (
+          <span className="rounded-md bg-amber-100 text-amber-850 dark:bg-amber-950 dark:text-amber-300 font-bold px-2 py-0.5 text-xs flex items-center gap-1 border border-amber-200 shrink-0">
+            <RotateCcw className="h-3 w-3" /> Fallback: {applicant.fallbackTime}
+          </span>
+        )}
+      </div>
 
-            {applicant.status === "offered" && (
-              <div className="flex items-center gap-1.5">
-                <span className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-purple-50 px-3 py-0.5 text-xs font-bold text-purple-700 dark:bg-purple-950/20 dark:text-purple-400 border border-purple-100 dark:border-purple-950 shadow-sm">
-                  <CheckCircle className="h-3.5 w-3.5 text-purple-600" />
-                  Offer Extended &bull; Eligible
-                </span>
-                {isAdmin && onRevokeOffer && (
-                  <button
-                    onClick={() => onRevokeOffer(applicant.id)}
-                    className="flex h-9 items-center gap-1 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 px-2.5 text-xs font-semibold text-amber-700 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-400 dark:hover:bg-amber-950/40 transition-colors cursor-pointer"
-                    title="Revoke offer and return candidate to graded status (removes candidate from interview scheduling)"
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    Revoke Offer
-                  </button>
-                )}
-              </div>
-            )}
+      {/* Right Side: Action Buttons */}
+      <div className="flex flex-wrap items-center gap-1.5 shrink-0 justify-end">
+        <button
+          onClick={() => onView(applicant.id)}
+          className="flex h-8 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 transition-colors cursor-pointer"
+        >
+          <Eye className="h-3.5 w-3.5" />
+          View
+        </button>
 
-            {applicant.status === "rejected" && (
-              <span className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-slate-50 px-3.5 text-xs font-bold text-slate-500 dark:bg-slate-950/20 dark:text-slate-400 border border-slate-100 dark:border-slate-900">
-                Rejected
-              </span>
-            )}
+        {isAdmin && applicant.status === "unassigned" && onAssign && (
+          <button
+            onClick={() => onAssign(applicant.id)}
+            className="flex h-8 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 transition-colors cursor-pointer"
+          >
+            <UserPlus className="h-3.5 w-3.5 text-blue-600" />
+            Assign
+          </button>
+        )}
 
-            {isAdmin &&
-              ["completed", "offered", "rejected"].includes(applicant.status) &&
-              onUngrade && (
+        {isAdmin && (applicant.status === "assigned" || applicant.assignedGraderName) && onUnassign && (
+          <button
+            onClick={() => onUnassign(applicant.id)}
+            className="flex h-8 items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:border-slate-800 dark:bg-slate-950 dark:text-rose-400 dark:hover:bg-rose-950/20 transition-colors cursor-pointer"
+            title="Unassign grader"
+          >
+            <UserMinus className="h-3.5 w-3.5 text-rose-500" />
+            Unassign
+          </button>
+        )}
+
+        {isAdmin &&
+          !["interview", "offered", "rejected"].includes(applicant.status) && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {onSendInterview && applicant.status !== "interview" && (
                 <button
-                  onClick={() => onUngrade(applicant.id)}
-                  className="flex h-9 items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 px-3.5 text-xs font-semibold text-amber-700 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-400 dark:hover:bg-amber-950/40 transition-colors cursor-pointer"
-                  title="Wipe score and send back to grader's feed to regrade"
+                  onClick={() => onSendInterview(applicant.id)}
+                  className="flex h-8 items-center gap-1 rounded-xl bg-indigo-600 hover:bg-indigo-700 px-3 text-xs font-bold text-white transition-all shadow-xs cursor-pointer"
+                  title="Send Interview Invitation"
                 >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  Ungrade
+                  <Calendar className="h-3.5 w-3.5" />
+                  Send to Interview
                 </button>
               )}
-          </div>
-        </div>
+              {onSendOffer && (
+                <button
+                  onClick={() => onSendOffer(applicant.id)}
+                  className="flex h-8 items-center gap-1 rounded-xl bg-blue-600 hover:bg-blue-700 px-3 text-xs font-bold text-white transition-all shadow-xs cursor-pointer"
+                >
+                  <CheckCircle className="h-3.5 w-3.5" />
+                  Send Offer
+                </button>
+              )}
+              {onSendReject && (
+                <button
+                  onClick={() => onSendReject(applicant.id)}
+                  className="flex h-8 items-center gap-1 rounded-xl bg-slate-100 hover:bg-rose-50 px-2.5 text-xs font-semibold text-rose-600 hover:text-rose-700 dark:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  <XCircle className="h-3.5 w-3.5" />
+                  Reject
+                </button>
+              )}
+            </div>
+          )}
+
+        {applicant.status === "interview" && isAdmin && onRescindInterview && (
+          <button
+            onClick={() => onRescindInterview(applicant.id)}
+            className="flex h-8 items-center gap-1 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 px-2.5 text-xs font-semibold text-amber-700 transition-colors cursor-pointer"
+            title="Rescind interview offer and return to graded status"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            Rescind Interview Offer
+          </button>
+        )}
+
+        {applicant.status === "offered" && isAdmin && onRevokeOffer && (
+          <button
+            onClick={() => onRevokeOffer(applicant.id)}
+            className="flex h-8 items-center gap-1 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 px-2.5 text-xs font-semibold text-amber-700 transition-colors cursor-pointer"
+            title="Revoke offer and return to graded status"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            Revoke Offer
+          </button>
+        )}
+
+        {applicant.status === "rejected" && isAdmin && onUndoRejection && (
+          <button
+            onClick={() => onUndoRejection(applicant.id)}
+            className="flex h-8 items-center gap-1 rounded-xl border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 px-2.5 text-xs font-bold text-indigo-700 transition-colors cursor-pointer shadow-xs"
+            title="Undo rejection"
+          >
+            <RotateCcw className="h-3.5 w-3.5 text-indigo-600" />
+            Undo Rejection
+          </button>
+        )}
+
+        {isAdmin &&
+          ["completed", "interview", "offered", "rejected"].includes(applicant.status) &&
+          onUngrade && (
+            <button
+              onClick={() => onUngrade(applicant.id)}
+              className="flex h-8 items-center gap-1 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 px-2.5 text-xs font-semibold text-amber-700 transition-colors cursor-pointer"
+              title="Ungrade applicant"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Ungrade
+            </button>
+          )}
       </div>
     </div>
   );

@@ -7,7 +7,7 @@ create extension if not exists "uuid-ossp";
 create type user_role as enum ('ADMIN', 'GRADER');
 
 -- Define Applicant Status Enum
-create type applicant_status as enum ('unassigned', 'assigned', 'in_progress', 'completed', 'offered', 'rejected');
+create type applicant_status as enum ('unassigned', 'assigned', 'in_progress', 'completed', 'interview', 'offered', 'rejected');
 
 -- Create profiles table
 create table public.profiles (
@@ -28,6 +28,9 @@ create table public.applicants (
   status applicant_status not null default 'unassigned',
   assigned_grader_id uuid references public.profiles(id) on delete set null,
   scheduled_time text,
+  fallback_time text,
+  student_id text,
+  form_responses jsonb default '{}'::jsonb,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
@@ -82,6 +85,9 @@ create policy "Allow admins to manage profiles" on public.profiles
 -- 2. Applicants Table Policies
 create policy "Admins have full access to applicants" on public.applicants
   for all using (public.is_admin());
+
+create policy "Authenticated users can update applicants" on public.applicants
+  for update using (auth.uid() is not null);
 
 create policy "Graders can view assigned applicants" on public.applicants
   for select using (
@@ -189,3 +195,19 @@ begin
   );
 end;
 $$ language plpgsql security definer;
+
+-- Create recruitment settings table for global configs (e.g. Google Form URL)
+create table public.recruitment_settings (
+  id text primary key default 'global',
+  interview_form_url text default 'https://forms.gle/bruin-strategy-interview-slots',
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table public.recruitment_settings enable row level security;
+
+create policy "Allow read access to recruitment_settings for authenticated users" on public.recruitment_settings
+  for select using (auth.uid() is not null);
+
+create policy "Allow admins to manage recruitment_settings" on public.recruitment_settings
+  for all using (public.is_admin());
+

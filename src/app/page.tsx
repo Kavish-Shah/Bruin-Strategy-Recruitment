@@ -24,12 +24,15 @@ import {
   Lock,
   RotateCcw,
   Shield,
+  Heart,
+  Briefcase,
 } from "lucide-react";
 
 import StatCard from "@/components/StatCard";
 import ApplicantCard, { Applicant, InterviewComment } from "@/components/ApplicantCard";
 import GradingModal from "@/components/GradingModal";
 import CandidateProfileModal from "@/components/CandidateProfileModal";
+import DecisionEmailModal from "@/components/DecisionEmailModal";
 
 // Initial active board members / graders
 interface Grader {
@@ -78,204 +81,8 @@ const INITIAL_GRADERS: Grader[] = [
   },
 ];
 
-// Initial mock applicants data
-const INITIAL_APPLICANTS: Applicant[] = [
-  {
-    id: "app-1",
-    name: "Sarah Jenkins",
-    email: "sarah.j@ucla.edu",
-    hashId: "8f3a12",
-    submissionDate: "2026-07-08",
-    cohort: "Management Consulting",
-    status: "assigned",
-    hasResume: true,
-    assignedGraderName: "John Doe",
-    scheduledTime: null,
-    interviewComments: [],
-  },
-  {
-    id: "app-2",
-    name: "Jessica Wang",
-    email: "jwang@ucla.edu",
-    hashId: "9c3b41",
-    submissionDate: "2026-07-07",
-    cohort: "Management Consulting",
-    status: "assigned",
-    hasResume: true,
-    assignedGraderName: "Jane Smith",
-    scheduledTime: null,
-    interviewComments: [],
-  },
-  {
-    id: "app-3",
-    name: "David Kim",
-    email: "d.kim@ucla.edu",
-    hashId: "2c8e41",
-    submissionDate: "2026-07-08",
-    cohort: "Management Consulting",
-    status: "assigned",
-    hasResume: true,
-    assignedGraderName: "Jane Smith",
-    scheduledTime: null,
-    interviewComments: [],
-  },
-  {
-    id: "app-4",
-    name: "Michael Brown",
-    email: "mbrown@ucla.edu",
-    hashId: "9a7b11",
-    submissionDate: "2026-07-09",
-    cohort: "Management Consulting",
-    status: "assigned",
-    hasResume: true,
-    assignedGraderName: "John Doe",
-    scheduledTime: null,
-    interviewComments: [],
-  },
-  {
-    id: "app-5",
-    name: "Emily Davis",
-    email: "edavis@ucla.edu",
-    hashId: "5f4d22",
-    submissionDate: "2026-07-09",
-    cohort: "Management Consulting",
-    status: "assigned",
-    hasResume: true,
-    assignedGraderName: "Jane Smith",
-    scheduledTime: null,
-    interviewComments: [],
-  },
-  {
-    id: "app-6",
-    name: "Ryan Patel",
-    email: "rpatel@ucla.edu",
-    hashId: "7a1d52",
-    submissionDate: "2026-07-07",
-    cohort: "Healthcare Consulting",
-    status: "assigned",
-    hasResume: true,
-    assignedGraderName: "Alex Chen",
-    scheduledTime: null,
-    interviewComments: [],
-  },
-  {
-    id: "app-7",
-    name: "Grace Lee",
-    email: "glee@ucla.edu",
-    hashId: "8a9f44",
-    submissionDate: "2026-07-08",
-    cohort: "Healthcare Consulting",
-    status: "assigned",
-    hasResume: true,
-    assignedGraderName: "Marcus Vance",
-    scheduledTime: "10:30 AM",
-    interviewComments: [],
-  },
-  {
-    id: "app-8",
-    name: "James Wilson",
-    email: "jwilson@ucla.edu",
-    hashId: "3d2c88",
-    submissionDate: "2026-07-09",
-    cohort: "Healthcare Consulting",
-    status: "assigned",
-    hasResume: true,
-    assignedGraderName: "John Doe",
-    scheduledTime: "10:30 AM",
-    interviewComments: [],
-  },
-  {
-    id: "app-9",
-    name: "Sophia Martinez",
-    email: "smartinez@ucla.edu",
-    hashId: "7b8e55",
-    submissionDate: "2026-07-10",
-    cohort: "Healthcare Consulting",
-    status: "assigned",
-    hasResume: true,
-    assignedGraderName: "Jane Smith",
-    scheduledTime: "10:30 AM",
-    interviewComments: [],
-  },
-  {
-    id: "app-10",
-    name: "Ashley Taylor",
-    email: "ataylor@ucla.edu",
-    hashId: "2b1a88",
-    submissionDate: "2026-07-09",
-    cohort: "Healthcare Consulting",
-    status: "assigned",
-    hasResume: true,
-    assignedGraderName: "Emily Taylor",
-    scheduledTime: "10:30 AM",
-    interviewComments: [],
-  },
-  {
-    id: "app-11",
-    name: "Daniel Anderson",
-    email: "danderson@ucla.edu",
-    hashId: "4e9a12",
-    submissionDate: "2026-07-09",
-    cohort: "Management Consulting",
-    status: "assigned",
-    hasResume: true,
-    assignedGraderName: "Alex Chen",
-    scheduledTime: "09:00 AM",
-    interviewComments: [],
-  },
-  {
-    id: "app-12",
-    name: "Olivia Thomas",
-    email: "othomas@ucla.edu",
-    hashId: "6a8d54",
-    submissionDate: "2026-07-09",
-    cohort: "Management Consulting",
-    status: "assigned",
-    hasResume: true,
-    assignedGraderName: "Marcus Vance",
-    scheduledTime: "09:00 AM",
-    interviewComments: [],
-  },
-  {
-    id: "app-13",
-    name: "William Jackson",
-    email: "wjackson@ucla.edu",
-    hashId: "1c9b33",
-    submissionDate: "2026-07-09",
-    cohort: "Management Consulting",
-    status: "assigned",
-    hasResume: true,
-    assignedGraderName: "Emily Taylor",
-    scheduledTime: "09:00 AM",
-    interviewComments: [],
-  },
-  {
-    id: "app-14",
-    name: "Sophia White",
-    email: "swhite@ucla.edu",
-    hashId: "5b7a89",
-    submissionDate: "2026-07-09",
-    cohort: "Healthcare Consulting",
-    status: "assigned",
-    hasResume: true,
-    assignedGraderName: "Alex Chen",
-    scheduledTime: "10:30 AM",
-    interviewComments: [],
-  },
-  {
-    id: "app-15",
-    name: "Matthew Harris",
-    email: "mharris@ucla.edu",
-    hashId: "3e8a44",
-    submissionDate: "2026-07-09",
-    cohort: "Healthcare Consulting",
-    status: "assigned",
-    hasResume: true,
-    assignedGraderName: "Emily Taylor",
-    scheduledTime: "10:30 AM",
-    interviewComments: [],
-  },
-];
+// Initial mock applicants data - Empty array so ONLY real Supabase applicants are displayed
+const INITIAL_APPLICANTS: Applicant[] = [];
 
 interface EmailLog {
   id: string;
@@ -496,15 +303,21 @@ export default function Dashboard() {
             hashId: app.id.slice(0, 6),
             submissionDate: app.created_at ? app.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
             cohort: normalizedCohort,
+            year: app.Year || app.year || app.YEAR || (app.cohort && app.cohort.toLowerCase().includes("freshman") ? "Freshman" : app.cohort && app.cohort.toLowerCase().includes("upper") ? "Upperclassman" : "Sophomore"),
             status: app.status,
             score: totalScore !== undefined ? parseFloat(totalScore.toFixed(1)) : undefined,
             grades,
-            hasResume: true,
+            hasResume: !!(app.resume_url || app.resumeUrl || app.resume || app.Resume),
+            resumeUrl: app.resume_url || app.resumeUrl || app.resume || app.Resume,
             assignedGraderId: assignedGraderId || undefined,
             assignedGraderName: assignedGraderName,
             scheduledTime: app.scheduled_time || null,
+            fallbackTime: app.fallback_time || null,
+            studentId: app.student_id || app.studentId || app.student_id_num || undefined,
+            tableNumber: app.table_number || (app.form_responses && app.form_responses.tableNumber) || undefined,
+            formResponses: app.form_responses || null,
             interviewComments: comments,
-            shortAnswer: app.short_answer || undefined,
+            shortAnswer: app.short_answer || app.shortAnswer || app.Short_Answer || undefined,
           };
         });
 
@@ -708,6 +521,10 @@ export default function Dashboard() {
   const [assigningApplicantId, setAssigningApplicantId] = useState<
     string | null
   >(null);
+  const [decisionEmailTarget, setDecisionEmailTarget] = useState<{
+    applicant: Applicant;
+    type: "REJECTION" | "OFFER" | "INTERVIEW";
+  } | null>(null);
 
   // Toast Notification State
   const [toast, setToast] = useState<{
@@ -723,6 +540,59 @@ export default function Dashboard() {
     setToast({ message, type, visible: true });
   };
 
+  // Coffee Chat Table Assignments state & drag-and-drop support
+  const [tableAssignments, setTableAssignments] = useState<Record<string, number>>({});
+  const [draggedAppId, setDraggedAppId] = useState<string | null>(null);
+  const [dragOverTableKey, setDragOverTableKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("coffee_chat_tables");
+      if (saved) setTableAssignments(JSON.parse(saved));
+    } catch (_) {}
+  }, []);
+
+  const handleAssignTable = async (applicantId: string, tableNum: number) => {
+    // 1. Update React state immediately for snappy UI
+    setTableAssignments((prev) => {
+      const next = { ...prev, [applicantId]: tableNum };
+      try {
+        localStorage.setItem("coffee_chat_tables", JSON.stringify(next));
+      } catch (_) {}
+      return next;
+    });
+
+    setApplicants((prev) =>
+      prev.map((app) => (app.id === applicantId ? { ...app, tableNumber: tableNum } : app))
+    );
+
+    // 2. Persist globally to Supabase!
+    if (hasSupabaseKeys) {
+      try {
+        const { error: colErr } = await supabase
+          .from("applicants")
+          .update({ table_number: tableNum })
+          .eq("id", applicantId);
+
+        if (colErr) {
+          // Fallback to storing inside form_responses jsonb column
+          const existingApp = applicants.find((a) => a.id === applicantId);
+          const existingResponses = existingApp?.formResponses || {};
+          const updatedResponses = { ...existingResponses, tableNumber: tableNum };
+
+          await supabase
+            .from("applicants")
+            .update({ form_responses: updatedResponses })
+            .eq("id", applicantId);
+        }
+      } catch (err: any) {
+        console.error("Error updating table number in Supabase:", err);
+      }
+    }
+
+    showToast(`Assigned candidate to Table ${tableNum}`, "success");
+  };
+
   useEffect(() => {
     if (toast.visible) {
       const timer = setTimeout(() => {
@@ -732,17 +602,20 @@ export default function Dashboard() {
     }
   }, [toast.visible]);
 
-  // Dynamic ranking calculations helper inside a cohort
+  // Dynamic ranking calculations helper inside a cohort (Highest score = #1 Rank)
   const recalculateRanks = (allApplicants: Applicant[]) => {
     return allApplicants.map((app) => {
-      if (app.status !== "completed" || app.score === undefined) {
+      if (
+        !["completed", "interview", "offered", "rejected"].includes(app.status) ||
+        app.score === undefined
+      ) {
         return { ...app, rank: undefined };
       }
       const cohortCompletions = allApplicants
         .filter(
           (a) =>
             a.cohort === app.cohort &&
-            a.status === "completed" &&
+            ["completed", "interview", "offered", "rejected"].includes(a.status) &&
             a.score !== undefined
         )
         .sort((a, b) => (b.score || 0) - (a.score || 0));
@@ -1176,8 +1049,183 @@ export default function Dashboard() {
     showToast("Interview comment saved successfully!", "success");
   };
 
-  // Send Offer (Triggers Resend mock)
-  const handleSendOffer = async (id: string) => {
+  // Trigger Decision Email Modal Popups (Admin action)
+  const handleSendInterview = (id: string) => {
+    const applicant = applicants.find((a) => a.id === id);
+    if (applicant) {
+      setDecisionEmailTarget({ applicant, type: "INTERVIEW" });
+    }
+  };
+
+  const handleSendOffer = (id: string) => {
+    const applicant = applicants.find((a) => a.id === id);
+    if (applicant) {
+      setDecisionEmailTarget({ applicant, type: "OFFER" });
+    }
+  };
+
+  const handleSendReject = (id: string) => {
+    const applicant = applicants.find((a) => a.id === id);
+    if (applicant) {
+      setDecisionEmailTarget({ applicant, type: "REJECTION" });
+    }
+  };
+
+  // Rescind / Revoke Interview Offer (returns candidate to completed/graded status)
+  const handleRescindInterview = async (id: string) => {
+    const applicant = applicants.find((a) => a.id === id);
+    if (!applicant) return;
+
+    if (hasSupabaseKeys && session) {
+      try {
+        const { error } = await supabase
+          .from("applicants")
+          .update({
+            status: "completed",
+            scheduled_time: null,
+          })
+          .eq("id", id);
+
+        if (error) throw error;
+
+        // Try updating fallback_time if column exists in remote DB
+        try {
+          await supabase
+            .from("applicants")
+            .update({ fallback_time: null })
+            .eq("id", id);
+        } catch (_) {}
+      } catch (err: any) {
+        const errMsg = err?.message || err?.details || (typeof err === "object" ? JSON.stringify(err) : String(err));
+        console.error("Supabase rescind interview error:", errMsg, err);
+        showToast(`Supabase update notice: ${errMsg}`, "error");
+      }
+    }
+
+    setApplicants((prev) =>
+      prev.map((app) =>
+        app.id === id
+          ? {
+              ...app,
+              status: "completed",
+              scheduledTime: null,
+              fallbackTime: null,
+            }
+          : app
+      )
+    );
+
+    setSelectedApplicantForProfile((prev) =>
+      prev && prev.id === id
+        ? {
+            ...prev,
+            status: "completed",
+            scheduledTime: null,
+            fallbackTime: null,
+          }
+        : prev
+    );
+
+    showToast(
+      `Rescinded interview offer for ${applicant.name}. Candidate returned to graded list.`,
+      "info"
+    );
+  };
+
+  // Update Primary Scheduled Time and Fallback Time
+  const handleUpdateScheduledTimes = async (
+    applicantId: string,
+    primaryTime: string | null,
+    fallbackTime: string | null
+  ) => {
+    if (hasSupabaseKeys && session) {
+      try {
+        const { error } = await supabase
+          .from("applicants")
+          .update({
+            scheduled_time: primaryTime,
+          })
+          .eq("id", applicantId);
+
+        if (error) throw error;
+
+        if (fallbackTime !== undefined) {
+          try {
+            await supabase
+              .from("applicants")
+              .update({ fallback_time: fallbackTime })
+              .eq("id", applicantId);
+          } catch (_) {}
+        }
+      } catch (err: any) {
+        const errMsg = err?.message || err?.details || (typeof err === "object" ? JSON.stringify(err) : String(err));
+        console.error("Supabase timing update error:", errMsg, err);
+        showToast(`Supabase update notice: ${errMsg}`, "error");
+      }
+    }
+
+    setApplicants((prev) =>
+      prev.map((app) =>
+        app.id === applicantId
+          ? { ...app, scheduledTime: primaryTime, fallbackTime }
+          : app
+      )
+    );
+
+    setSelectedApplicantForProfile((prev) =>
+      prev && prev.id === applicantId
+        ? { ...prev, scheduledTime: primaryTime, fallbackTime }
+        : prev
+    );
+
+    const app = applicants.find((a) => a.id === applicantId);
+    showToast(
+      `Updated interview slots for ${app?.name || "candidate"}! (Primary: ${primaryTime || "None"}, Fallback: ${fallbackTime || "None"})`,
+      "success"
+    );
+  };
+
+  // Execution routines after copying & confirming in DecisionEmailModal
+  const executeSendInterview = async (id: string) => {
+    const applicant = applicants.find((a) => a.id === id);
+    if (!applicant) return;
+
+    if (hasSupabaseKeys && session) {
+      try {
+        const { error } = await supabase
+          .from("applicants")
+          .update({ status: "interview" })
+          .eq("id", id);
+        if (error) throw error;
+      } catch (err: any) {
+        const errMsg = err?.message || err?.details || (typeof err === "object" ? JSON.stringify(err) : String(err));
+        console.error("Supabase send interview error:", errMsg, err);
+        showToast(`Supabase update notice: ${errMsg}`, "error");
+      }
+    }
+
+    setApplicants((prev) =>
+      prev.map((app) => (app.id === id ? { ...app, status: "interview" } : app))
+    );
+
+    setSelectedApplicantForProfile((prev) =>
+      prev && prev.id === id ? { ...prev, status: "interview" } : prev
+    );
+
+    const newLog: EmailLog = {
+      id: `log-${Date.now()}`,
+      recipientName: applicant.name,
+      recipientEmail: applicant.email,
+      type: "INTERVIEW",
+      timestamp: new Date().toLocaleString(),
+      status: "SENT",
+    };
+
+    setEmailLogs((prev) => [newLog, ...prev]);
+    showToast(`Copied text & marked ${applicant.name} as Interviewing!`, "success");
+  };
+
+  const executeSendOffer = async (id: string) => {
     const applicant = applicants.find((a) => a.id === id);
     if (!applicant) return;
 
@@ -1189,14 +1237,18 @@ export default function Dashboard() {
           .eq("id", id);
         if (error) throw error;
       } catch (err: any) {
-        console.error("Supabase send offer error:", err);
-        showToast(`Error writing to Supabase: ${err.message}`, "error");
-        return;
+        const errMsg = err?.message || err?.details || (typeof err === "object" ? JSON.stringify(err) : String(err));
+        console.error("Supabase send offer error:", errMsg, err);
+        showToast(`Supabase update notice: ${errMsg}`, "error");
       }
     }
 
     setApplicants((prev) =>
       prev.map((app) => (app.id === id ? { ...app, status: "offered" } : app))
+    );
+
+    setSelectedApplicantForProfile((prev) =>
+      prev && prev.id === id ? { ...prev, status: "offered" } : prev
     );
 
     const newLog: EmailLog = {
@@ -1209,7 +1261,7 @@ export default function Dashboard() {
     };
 
     setEmailLogs((prev) => [newLog, ...prev]);
-    showToast(`Offer email sent via Resend API to ${applicant.name}!`, "success");
+    showToast(`Copied text & extended offer to ${applicant.name}!`, "success");
   };
 
   // Revoke / Rescind Offer (returns candidate to completed/graded status needing an offer)
@@ -1229,9 +1281,9 @@ export default function Dashboard() {
 
         if (error) throw error;
       } catch (err: any) {
-        console.error("Supabase revoke offer error:", err);
-        showToast(`Error updating Supabase: ${err.message}`, "error");
-        return;
+        const errMsg = err?.message || err?.details || (typeof err === "object" ? JSON.stringify(err) : String(err));
+        console.error("Supabase revoke offer error:", errMsg, err);
+        showToast(`Supabase update notice: ${errMsg}`, "error");
       }
     }
 
@@ -1263,8 +1315,7 @@ export default function Dashboard() {
     );
   };
 
-  // Send Reject (Triggers Resend mock)
-  const handleSendReject = async (id: string) => {
+  const executeSendReject = async (id: string) => {
     const applicant = applicants.find((a) => a.id === id);
     if (!applicant) return;
 
@@ -1276,14 +1327,18 @@ export default function Dashboard() {
           .eq("id", id);
         if (error) throw error;
       } catch (err: any) {
-        console.error("Supabase send reject error:", err);
-        showToast(`Error writing to Supabase: ${err.message}`, "error");
-        return;
+        const errMsg = err?.message || err?.details || (typeof err === "object" ? JSON.stringify(err) : String(err));
+        console.error("Supabase send reject error:", errMsg, err);
+        showToast(`Supabase update notice: ${errMsg}`, "error");
       }
     }
 
     setApplicants((prev) =>
       prev.map((app) => (app.id === id ? { ...app, status: "rejected" } : app))
+    );
+
+    setSelectedApplicantForProfile((prev) =>
+      prev && prev.id === id ? { ...prev, status: "rejected" } : prev
     );
 
     const newLog: EmailLog = {
@@ -1296,7 +1351,42 @@ export default function Dashboard() {
     };
 
     setEmailLogs((prev) => [newLog, ...prev]);
-    showToast(`Rejection email sent via Resend API to ${applicant.name}.`, "info");
+    showToast(`Copied rejection text & marked ${applicant.name} as Rejected.`, "info");
+  };
+
+  // Undo Rejection (Restores candidate with their score & completed/assigned status preserved)
+  const handleUndoRejection = async (id: string) => {
+    const applicant = applicants.find((a) => a.id === id);
+    if (!applicant) return;
+
+    const targetStatus = applicant.score !== undefined ? "completed" : "assigned";
+
+    if (hasSupabaseKeys && session) {
+      try {
+        const { error } = await supabase
+          .from("applicants")
+          .update({ status: targetStatus })
+          .eq("id", id);
+        if (error) throw error;
+      } catch (err: any) {
+        console.error("Supabase undo rejection error:", err);
+        showToast(`Error updating Supabase: ${err.message}`, "error");
+        return;
+      }
+    }
+
+    setApplicants((prev) =>
+      prev.map((app) => (app.id === id ? { ...app, status: targetStatus } : app))
+    );
+
+    setSelectedApplicantForProfile((prev) =>
+      prev && prev.id === id ? { ...prev, status: targetStatus } : prev
+    );
+
+    showToast(
+      `Rejection undone for ${applicant.name}! Restored score (${applicant.score ?? "N/A"}) & profile.`,
+      "success"
+    );
   };
 
   // Ungrade applicant (Admin only)
@@ -1449,13 +1539,14 @@ export default function Dashboard() {
       (a) => a.status !== "unassigned"
     ).length;
     const completed = cohortApplicants.filter((a) =>
-      ["completed", "offered", "rejected"].includes(a.status)
+      ["completed", "interview", "offered", "rejected"].includes(a.status)
     ).length;
-    const offered = cohortApplicants.filter(
-      (a) => a.status === "offered"
+    const interviewInvites = cohortApplicants.filter((a) =>
+      ["interview", "offered"].includes(a.status)
     ).length;
+    const offered = interviewInvites;
 
-    return { total, assigned, completed, offered };
+    return { total, assigned, completed, offered, interviewInvites };
   }, [applicants, selectedCohort]);
 
   // Compute dynamic overall cohort average score (out of 25.0)
@@ -1463,7 +1554,7 @@ export default function Dashboard() {
     const completedApps = applicants.filter(
       (a) =>
         a.cohort === selectedCohort &&
-        ["completed", "offered", "rejected"].includes(a.status) &&
+        ["completed", "interview", "offered", "rejected"].includes(a.status) &&
         a.score !== undefined
     );
     if (completedApps.length === 0) return 0;
@@ -1476,7 +1567,7 @@ export default function Dashboard() {
     const completedApps = applicants.filter(
       (a) =>
         a.cohort === selectedCohort &&
-        ["completed", "offered", "rejected"].includes(a.status) &&
+        ["completed", "interview", "offered", "rejected"].includes(a.status) &&
         a.score !== undefined
     );
     const exceptional = completedApps.filter((a) => (a.score || 0) >= 21).length;
@@ -1500,7 +1591,7 @@ export default function Dashboard() {
   const funnelStats = useMemo(() => {
     const total = applicants.length || 1;
     const evaluated = applicants.filter((a) =>
-      ["completed", "offered", "rejected"].includes(a.status)
+      ["completed", "interview", "offered", "rejected"].includes(a.status)
     ).length;
     const offered = applicants.filter((a) => a.status === "offered").length;
     return {
@@ -1519,7 +1610,7 @@ export default function Dashboard() {
         (a) => a.assignedGraderName === grader.name
       );
       const completedApps = assignedApps.filter((a) =>
-        ["completed", "offered", "rejected"].includes(a.status)
+        ["completed", "interview", "offered", "rejected"].includes(a.status)
       );
 
       const totalScores = completedApps.reduce(
@@ -1571,8 +1662,19 @@ export default function Dashboard() {
         return true;
       })
       .sort((a, b) => {
-        if (a.rank && b.rank) return a.rank - b.rank;
-        if (a.score && b.score) return b.score - a.score;
+        // Highest score (lowest rank #1) first
+        if (a.rank !== undefined && b.rank !== undefined) {
+          return a.rank - b.rank;
+        }
+        if (a.rank !== undefined) return -1;
+        if (b.rank !== undefined) return 1;
+
+        if (a.score !== undefined && b.score !== undefined) {
+          return b.score - a.score;
+        }
+        if (a.score !== undefined) return -1;
+        if (b.score !== undefined) return 1;
+
         return a.name.localeCompare(b.name);
       });
   }, [
@@ -1790,7 +1892,7 @@ export default function Dashboard() {
                     applicants.filter(
                       (a) =>
                         (a.assignedGraderName === currentUser.name || a.assignedGraderId === currentUser.id) &&
-                        !["completed", "offered", "rejected"].includes(a.status)
+                        !["completed", "interview", "offered", "rejected"].includes(a.status)
                     ).length
                   }
                 </span>
@@ -1818,17 +1920,31 @@ export default function Dashboard() {
             )}
 
             {userRole === "ADMIN" && (
-              <button
-                onClick={() => setActiveTab("interviews")}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  activeTab === "interviews"
-                    ? "bg-white text-slate-900 border border-slate-200/50 shadow-sm"
-                    : "text-slate-655 hover:bg-slate-200/40 hover:text-slate-900"
-                }`}
-              >
-                <Calendar className="h-4 w-4 text-slate-555" />
-                Interview Scheduling
-              </button>
+              <>
+                <button
+                  onClick={() => setActiveTab("coffee_chats")}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    activeTab === "coffee_chats" || activeTab === "interviews"
+                      ? "bg-white text-slate-900 border border-slate-200/50 shadow-sm"
+                      : "text-slate-655 hover:bg-slate-200/40 hover:text-slate-900"
+                  }`}
+                >
+                  <Calendar className="h-4 w-4 text-indigo-600" />
+                  Coffee Chats Scheduler
+                </button>
+
+                <button
+                  onClick={() => setActiveTab("group_interviews")}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    activeTab === "group_interviews"
+                      ? "bg-white text-slate-900 border border-slate-200/50 shadow-sm"
+                      : "text-slate-655 hover:bg-slate-200/40 hover:text-slate-900"
+                  }`}
+                >
+                  <Users className="h-4 w-4 text-purple-600" />
+                  Group Interviews
+                </button>
+              </>
             )}
 
             <button
@@ -1996,9 +2112,9 @@ export default function Dashboard() {
                   icon={CheckSquare}
                 />
                 <StatCard
-                  title="Offers Sent (Round 2)"
-                  value={cohortStats.offered}
-                  description="Acceptances dispatched via Resend"
+                  title="Interview Invites Sent"
+                  value={cohortStats.interviewInvites}
+                  description="Total Coffee Chat candidates (Scheduled + Queued)"
                   icon={Mail}
                 />
               </div>
@@ -2033,7 +2149,8 @@ export default function Dashboard() {
                           <option value="unassigned">Unassigned</option>
                           <option value="assigned">Assigned</option>
                           <option value="in_progress">In Progress</option>
-                          <option value="completed">Completed</option>
+                          <option value="completed">Completed / Graded</option>
+                          <option value="interview">Interview Stage</option>
                           <option value="offered">Offered</option>
                           <option value="rejected">Rejected</option>
                         </select>
@@ -2047,14 +2164,6 @@ export default function Dashboard() {
                           >
                             <Sparkles className="h-3.5 w-3.5 text-amber-700" />
                             Round-Robin Assign
-                          </button>
-                          <button
-                            onClick={handleResetAllApplicants}
-                            className="h-9 flex items-center gap-2 rounded-xl bg-rose-50 border border-rose-200/60 hover:bg-rose-100 px-4 text-xs font-bold text-rose-850 transition-colors cursor-pointer shadow-sm"
-                            title="Unassign all applicants and wipe all grades"
-                          >
-                            <RotateCcw className="h-3.5 w-3.5 text-rose-700" />
-                            Reset Recruitment Board
                           </button>
                         </div>
                       )}
@@ -2074,7 +2183,7 @@ export default function Dashboard() {
                               if (found) {
                                 // If already rated, open Profile modal. Otherwise open Rubric Grading modal.
                                 if (
-                                  ["completed", "offered", "rejected"].includes(
+                                  ["completed", "interview", "offered", "rejected"].includes(
                                     found.status
                                   )
                                 ) {
@@ -2086,9 +2195,12 @@ export default function Dashboard() {
                             }}
                             onAssign={(id) => setAssigningApplicantId(id)}
                             onUnassign={handleUnassignGrader}
+                            onSendInterview={handleSendInterview}
+                            onRescindInterview={handleRescindInterview}
                             onSendOffer={handleSendOffer}
                             onRevokeOffer={handleRevokeOffer}
                             onSendReject={handleSendReject}
+                            onUndoRejection={handleUndoRejection}
                             onUngrade={handleUngradeApplicant}
                           />
 
@@ -2310,321 +2422,300 @@ export default function Dashboard() {
             </>
           )}
 
-          {/* TAB: INTERVIEW SCHEDULING (ADMIN ONLY) */}
-          {activeTab === "interviews" && userRole === "ADMIN" && (
-            <div className="space-y-6 max-w-6xl">
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm">
+          {/* PAGE 1: COFFEE CHATS SCHEDULER (ADMIN ONLY) */}
+          {(activeTab === "coffee_chats" || activeTab === "interviews") && userRole === "ADMIN" && (
+            <div className="space-y-8 max-w-6xl">
+              {/* Header Banner */}
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs">
                 <div>
-                  <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                    <Calendar className="h-5 w-5 text-indigo-600" />
-                    Round 2 Global Interview Scheduler
+                  <h3 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
+                    ☕ Coffee Chats Scheduler
                   </h3>
                   <p className="text-xs text-slate-500 mt-1">
-                    Only graded candidates who have received an offer (via <span className="font-bold text-blue-600">Send Offer</span> in All Applicants) are eligible for interview scheduling.
+                    Fall 2026 Recruitment &bull; 120 Total Candidates (40 per Time Slot &bull; 8 Tables per Slot, 3-6 per table)
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="text-right">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Eligible Candidates</span>
-                    <span className="text-base font-black text-purple-700">
-                      {applicants.filter((a) => a.status === "offered" || (a.status === "completed" && a.score !== undefined)).length} Total
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Coffee Chat Candidates</span>
+                    <span className="text-base font-black text-indigo-700">
+                      {applicants.filter((a) => ["interview", "offered", "completed"].includes(a.status)).length} Candidates
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* SECTION: OFFERED CANDIDATES QUEUE (UNSCHEDULED) */}
-              <div className="rounded-2xl border border-purple-200/80 bg-purple-50/30 p-5 space-y-4">
+              {/* UNSCHEDULED QUEUE */}
+              <div className="rounded-2xl border border-indigo-200/80 bg-indigo-50/40 p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-purple-600" />
-                    <h4 className="text-sm font-bold text-slate-800">
-                      Offered Candidates Queue (Needs Scheduling)
-                    </h4>
+                    <Sparkles className="h-4 w-4 text-indigo-600" />
+                    <h5 className="text-xs font-bold text-slate-800">
+                      Unscheduled Candidates Queue (Pending Slot Assignment)
+                    </h5>
                   </div>
-                  <span className="text-[10px] font-bold text-purple-700 bg-purple-100/80 px-2.5 py-0.5 rounded-full border border-purple-200">
-                    {applicants.filter((a) => (a.status === "offered" || a.status === "completed") && !a.scheduledTime).length} Pending Slot
+                  <span className="text-[10px] font-bold text-indigo-700 bg-indigo-100/80 px-2.5 py-0.5 rounded-full border border-indigo-200 font-mono">
+                    {applicants.filter((a) => (a.status === "interview" || a.status === "offered" || a.status === "completed") && !a.scheduledTime).length} Pending
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                  {applicants.filter((a) => (a.status === "offered" || a.status === "completed") && !a.scheduledTime).length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+                  {applicants.filter((a) => (a.status === "interview" || a.status === "offered" || a.status === "completed") && !a.scheduledTime).length > 0 ? (
                     applicants
-                      .filter((a) => (a.status === "offered" || a.status === "completed") && !a.scheduledTime)
+                      .filter((a) => (a.status === "interview" || a.status === "offered" || a.status === "completed") && !a.scheduledTime)
                       .map((app) => (
-                        <div key={app.id} className="p-3.5 rounded-xl border border-purple-200/60 bg-white shadow-sm space-y-2">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <h5 className="text-xs font-bold text-slate-800">{app.name}</h5>
-                              <span className="text-[9px] text-slate-400 font-mono">#{app.hashId}</span>
-                            </div>
-                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-200">
-                              {app.cohort}
-                            </span>
+                        <div key={app.id} className="p-2.5 rounded-xl border border-indigo-200/60 bg-white shadow-2xs space-y-1.5">
+                          <div className="flex items-center justify-between gap-1">
+                            <h6 className="text-xs font-bold text-slate-800 truncate">{app.name}</h6>
+                            {app.cohort.toLowerCase().includes("health") ? (
+                              <span className="p-1 rounded-md bg-rose-50 border border-rose-100 shrink-0" title="Healthcare Consulting">
+                                <Heart className="h-3 w-3 text-rose-500 fill-rose-500/20" />
+                              </span>
+                            ) : (
+                              <span className="p-1 rounded-md bg-indigo-50 border border-indigo-100 shrink-0" title="Management Consulting">
+                                <Briefcase className="h-3 w-3 text-indigo-600" />
+                              </span>
+                            )}
                           </div>
-                          {app.score !== undefined && (
-                            <div className="text-[10px] font-semibold text-slate-600 flex items-center gap-1">
-                              <Award className="h-3 w-3 text-amber-500" /> Score: <span className="font-bold text-slate-800">{app.score.toFixed(1)}/25.0</span>
-                            </div>
-                          )}
-                          <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-1">
-                            <button
-                              onClick={() => handleRevokeOffer(app.id)}
-                              className="text-[9px] font-bold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5 transition-colors cursor-pointer"
-                              title="Revoke offer and return to graded status"
-                            >
-                              Revoke Offer
-                            </button>
+
+                          <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono gap-1">
+                            <span>{app.studentId ? `ID: ${app.studentId}` : "ID: --"}</span>
+                            {app.fallbackTime && (
+                              <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200/80 shrink-0 font-sans">
+                                Fallback: {app.fallbackTime}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="pt-1 border-t border-slate-100">
                             <select
                               value=""
                               onChange={(e) => {
-                                if (e.target.value === "revoke_offer") {
-                                  handleRevokeOffer(app.id);
+                                if (e.target.value === "rescind_interview") {
+                                  handleRescindInterview(app.id);
                                 } else if (e.target.value) {
                                   handleRescheduleApplicant(app.id, e.target.value as any);
                                 }
                               }}
-                              className="text-[10px] font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded px-1.5 py-0.5 outline-none cursor-pointer"
+                              className="text-[10px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded px-1.5 py-0.5 outline-none cursor-pointer w-full"
                             >
                               <option value="">Assign Slot...</option>
-                              <option value="09:00 AM">9:00 AM - 10:00 AM</option>
-                              <option value="10:30 AM">10:30 AM - 11:30 AM</option>
-                              <option value="01:00 PM">1:00 PM - 2:00 PM</option>
-                              <option value="revoke_offer">Revoke Offer (Return to Graded)</option>
+                              <option value="4:40 - 5:30">4:40 - 5:30</option>
+                              <option value="5:45 - 6:35">5:45 - 6:35</option>
+                              <option value="6:50 - 7:40">6:50 - 7:40</option>
+                              <option value="rescind_interview">Rescind Offer</option>
                             </select>
                           </div>
                         </div>
                       ))
                   ) : (
-                    <div className="col-span-full py-6 text-center text-slate-500 text-xs italic bg-white/60 rounded-xl border border-purple-100">
-                      No unscheduled offered candidates. To schedule interviews, go to <span className="font-bold text-slate-700">All Applicants</span>, find graded candidates, and click <span className="font-bold text-blue-600">Send Offer</span>.
+                    <div className="col-span-full py-4 text-center text-slate-500 text-xs italic bg-white/60 rounded-xl border border-indigo-100">
+                      No pending unscheduled Coffee Chat candidates.
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Columns for Scheduled Time Blocks */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
-                
-                {/* MORNING BLOCK Column */}
-                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse" />
-                        Morning: 9:00 AM - 10:00 AM
-                      </h4>
-                    </div>
-                    <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
-                      {applicants.filter((a) => (a.status === "offered" || a.status === "completed") && a.scheduledTime === "09:00 AM").length} Scheduled
-                    </span>
-                  </div>
+              {/* 3 TIME SLOT SECTIONS WITH VISUAL TABLE CHUNKING */}
+              {[
+                { time: "4:40 - 5:30", label: "Slot 1 (4:40 PM - 5:30 PM)", color: "indigo" },
+                { time: "5:45 - 6:35", label: "Slot 2 (5:45 PM - 6:35 PM)", color: "emerald" },
+                { time: "6:50 - 7:40", label: "Slot 3 (6:50 PM - 7:40 PM)", color: "purple" },
+              ].map((slot) => {
+                const slotApps = applicants.filter(
+                  (a) =>
+                    (a.status === "interview" || a.status === "offered" || a.status === "completed") &&
+                    a.scheduledTime &&
+                    (a.scheduledTime.includes(slot.time.split(" - ")[0]) || a.scheduledTime.includes(slot.time.split(" - ")[1]))
+                );
 
-                  <div className="space-y-3 max-h-[450px] overflow-y-auto pr-1">
-                    {applicants.filter((a) => (a.status === "offered" || a.status === "completed") && a.scheduledTime === "09:00 AM").length > 0 ? (
-                      applicants
-                        .filter((a) => (a.status === "offered" || a.status === "completed") && a.scheduledTime === "09:00 AM")
-                        .map((app) => (
+                // Chunk slot applicants into 8 visual tables with custom table assignment overrides
+                const tables = Array.from({ length: 8 }, (_, tableIdx) => {
+                  const tableNumber = tableIdx + 1;
+                  const tableCandidates = slotApps.filter((app, idx) => {
+                    const assignedTable = tableAssignments[app.id];
+                    if (assignedTable !== undefined) {
+                      return assignedTable === tableNumber;
+                    }
+                    return (idx % 8) + 1 === tableNumber;
+                  });
+                  return { tableNumber, tableCandidates };
+                });
+
+                return (
+                  <div key={slot.time} className="space-y-4 rounded-3xl border border-slate-200 bg-slate-50/50 p-6">
+                    <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                      <div>
+                        <h4 className="text-base font-extrabold text-slate-800 flex items-center gap-2">
+                          <span className={`h-2.5 w-2.5 rounded-full animate-pulse bg-${slot.color}-500`} />
+                          {slot.label}
+                        </h4>
+                        <p className="text-xs text-slate-500">
+                          Target: 40 candidates &bull; 8 Tables (Drag & Drop candidates into any Table below)
+                        </p>
+                      </div>
+                      <span className={`text-xs font-bold px-3 py-1 rounded-full border font-mono bg-${slot.color}-50 text-${slot.color}-700 border-${slot.color}-200`}>
+                        {slotApps.length} / 40 Scheduled
+                      </span>
+                    </div>
+
+                    {/* 8 TABLE CARDS GRID WITH DRAG & DROP SUPPORT */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                      {tables.map(({ tableNumber, tableCandidates }) => {
+                        const tableKey = `${slot.time}-table-${tableNumber}`;
+                        const isOver = dragOverTableKey === tableKey;
+
+                        return (
                           <div
-                            key={app.id}
-                            className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 hover:border-indigo-200 hover:bg-white transition-all shadow-sm space-y-2"
+                            key={tableNumber}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.dataTransfer.dropEffect = "move";
+                              if (dragOverTableKey !== tableKey) {
+                                setDragOverTableKey(tableKey);
+                              }
+                            }}
+                            onDragLeave={(e) => {
+                              if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                              setDragOverTableKey(null);
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              const id = e.dataTransfer.getData("text/plain") || draggedAppId;
+                              if (id) {
+                                handleAssignTable(id, tableNumber);
+                              }
+                              setDragOverTableKey(null);
+                              setDraggedAppId(null);
+                            }}
+                            className={`rounded-2xl border p-3.5 space-y-2.5 transition-colors ${
+                              isOver
+                                ? "border-indigo-500 bg-indigo-50/80 ring-2 ring-indigo-200"
+                                : "border-slate-200 bg-white shadow-2xs"
+                            }`}
                           >
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <h5 className="text-xs font-bold text-slate-800">{app.name}</h5>
-                                <span className="text-[9px] text-slate-400 font-mono">#{app.hashId}</span>
-                              </div>
-                              <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-750 border border-indigo-100">
-                                {app.cohort}
+                            <div className="flex items-center justify-between border-b border-slate-100 pb-1.5 pointer-events-none">
+                              <span className="text-xs font-extrabold text-slate-700 flex items-center gap-1">
+                                🪑 Table {tableNumber}
+                              </span>
+                              <span className="text-[10px] font-bold text-slate-400 font-mono">
+                                {tableCandidates.length} Seats
                               </span>
                             </div>
 
-                            {app.score !== undefined && (
-                              <div className="text-[10px] font-semibold text-slate-600 flex items-center gap-1">
-                                <Award className="h-3 w-3 text-amber-500" /> Score: <span className="font-bold text-slate-800">{app.score.toFixed(1)}/25.0</span>
-                              </div>
-                            )}
+                            <div className="space-y-2 min-h-[90px]">
+                              {tableCandidates.length > 0 ? (
+                                tableCandidates.map((app) => (
+                                  <div
+                                    key={app.id}
+                                    draggable={true}
+                                    onDragStart={(e) => {
+                                      e.dataTransfer.setData("text/plain", app.id);
+                                      setDraggedAppId(app.id);
+                                    }}
+                                    onDragEnd={() => {
+                                      setDraggedAppId(null);
+                                      setDragOverTableKey(null);
+                                    }}
+                                    className={`p-2.5 rounded-xl border transition-all space-y-1.5 shadow-2xs cursor-grab active:cursor-grabbing ${
+                                      draggedAppId === app.id
+                                        ? "opacity-30 border-dashed border-indigo-400 bg-indigo-50/50"
+                                        : "border-slate-200/80 bg-slate-50/60 hover:bg-white hover:border-indigo-300"
+                                    }`}
+                                  >
+                                    {/* Row 1: Candidate Name & Cohort Icon */}
+                                    <div className="flex items-center justify-between gap-1">
+                                      <h6 className="text-xs font-bold text-slate-800 truncate">{app.name}</h6>
+                                      {app.cohort.toLowerCase().includes("health") ? (
+                                        <span className="p-1 rounded-md bg-rose-50 border border-rose-100 shrink-0" title="Healthcare Consulting">
+                                          <Heart className="h-3 w-3 text-rose-500 fill-rose-500/20" />
+                                        </span>
+                                      ) : (
+                                        <span className="p-1 rounded-md bg-indigo-50 border border-indigo-100 shrink-0" title="Management Consulting">
+                                          <Briefcase className="h-3 w-3 text-indigo-600" />
+                                        </span>
+                                      )}
+                                    </div>
 
-                            <div className="flex items-center justify-between pt-2 border-t border-slate-100 mt-1">
-                              <span className="text-[9px] text-slate-400 font-bold uppercase">Timing:</span>
-                              <select
-                                value="09:00 AM"
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  if (val === "revoke_offer") {
-                                    handleRevokeOffer(app.id);
-                                  } else {
-                                    handleRescheduleApplicant(
-                                      app.id,
-                                      val === "unscheduled" ? null : (val as any)
-                                    );
-                                  }
-                                }}
-                                className="text-[10px] font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 outline-none cursor-pointer"
-                              >
-                                <option value="09:00 AM">9:00 AM - 10:00 AM</option>
-                                <option value="10:30 AM">10:30 AM - 11:30 AM</option>
-                                <option value="01:00 PM">1:00 PM - 2:00 PM</option>
-                                <option value="unscheduled">Unschedule to Queue</option>
-                                <option value="revoke_offer">Revoke Offer (Return to Graded)</option>
-                              </select>
+                                    {/* Row 2: Student ID & Fallback Slot INLINE */}
+                                    <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono gap-1">
+                                      <span>{app.studentId ? `ID: ${app.studentId}` : "ID: --"}</span>
+                                      {app.fallbackTime && (
+                                        <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200/80 shrink-0 font-sans">
+                                          Fallback: {app.fallbackTime}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {/* Row 3: Move Time Slot Selector */}
+                                    <div className="pt-1 border-t border-slate-100">
+                                      <select
+                                        value={slot.time}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          if (val === "unscheduled") {
+                                            handleRescheduleApplicant(app.id, null);
+                                          } else if (val) {
+                                            handleRescheduleApplicant(app.id, val as any);
+                                          }
+                                        }}
+                                        className="w-full text-[9px] font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded px-1 py-0.5 outline-none cursor-pointer truncate"
+                                      >
+                                        <option value="4:40 - 5:30">4:40 - 5:30</option>
+                                        <option value="5:45 - 6:35">5:45 - 6:35</option>
+                                        <option value="6:50 - 7:40">6:50 - 7:40</option>
+                                        <option value="unscheduled">Unschedule</option>
+                                      </select>
+                                    </div>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="py-6 text-center text-[10px] text-slate-400 italic border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                                  Drag candidate here
+                                </div>
+                              )}
                             </div>
                           </div>
-                        ))
-                    ) : (
-                      <p className="text-xs text-slate-400 italic text-center py-6">
-                        No candidates scheduled in this block.
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* MID-DAY BLOCK Column */}
-                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                        Mid-Day: 10:30 AM - 11:30 AM
-                      </h4>
+                        );
+                      })}
                     </div>
-                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
-                      {applicants.filter((a) => (a.status === "offered" || a.status === "completed") && a.scheduledTime === "10:30 AM").length} Scheduled
-                    </span>
                   </div>
+                );
+              })}
+            </div>
+          )}
 
-                  <div className="space-y-3 max-h-[450px] overflow-y-auto pr-1">
-                    {applicants.filter((a) => (a.status === "offered" || a.status === "completed") && a.scheduledTime === "10:30 AM").length > 0 ? (
-                      applicants
-                        .filter((a) => (a.status === "offered" || a.status === "completed") && a.scheduledTime === "10:30 AM")
-                        .map((app) => (
-                          <div
-                            key={app.id}
-                            className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 hover:border-emerald-200 hover:bg-white transition-all shadow-sm space-y-2"
-                          >
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <h5 className="text-xs font-bold text-slate-800">{app.name}</h5>
-                                <span className="text-[9px] text-slate-400 font-mono">#{app.hashId}</span>
-                              </div>
-                              <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-100">
-                                {app.cohort}
-                              </span>
-                            </div>
-
-                            {app.score !== undefined && (
-                              <div className="text-[10px] font-semibold text-slate-600 flex items-center gap-1">
-                                <Award className="h-3 w-3 text-amber-500" /> Score: <span className="font-bold text-slate-800">{app.score.toFixed(1)}/25.0</span>
-                              </div>
-                            )}
-
-                            <div className="flex items-center justify-between pt-2 border-t border-slate-100 mt-1">
-                              <span className="text-[9px] text-slate-400 font-bold uppercase">Timing:</span>
-                              <select
-                                value="10:30 AM"
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  if (val === "revoke_offer") {
-                                    handleRevokeOffer(app.id);
-                                  } else {
-                                    handleRescheduleApplicant(
-                                      app.id,
-                                      val === "unscheduled" ? null : (val as any)
-                                    );
-                                  }
-                                }}
-                                className="text-[10px] font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 outline-none cursor-pointer"
-                              >
-                                <option value="09:00 AM">9:00 AM - 10:00 AM</option>
-                                <option value="10:30 AM">10:30 AM - 11:30 AM</option>
-                                <option value="01:00 PM">1:00 PM - 2:00 PM</option>
-                                <option value="unscheduled">Unschedule to Queue</option>
-                                <option value="revoke_offer">Revoke Offer (Return to Graded)</option>
-                              </select>
-                            </div>
-                          </div>
-                        ))
-                    ) : (
-                      <p className="text-xs text-slate-400 italic text-center py-6">
-                        No candidates scheduled in this block.
-                      </p>
-                    )}
-                  </div>
+          {/* PAGE 2: GROUP INTERVIEWS (ADMIN ONLY) */}
+          {activeTab === "group_interviews" && userRole === "ADMIN" && (
+            <div className="space-y-8 max-w-6xl">
+              {/* Header Banner */}
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs">
+                <div>
+                  <h3 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
+                    👥 Group Interviews Scheduler
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Round 3 Team Case Study Evaluation, Room Allocations & Panel Schedules.
+                  </p>
                 </div>
+                <span className="text-xs font-extrabold text-amber-700 bg-amber-50 px-3 py-1 rounded-full border border-amber-200/80">
+                  Status: To Be Determined
+                </span>
+              </div>
 
-                {/* AFTERNOON BLOCK Column */}
-                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-full bg-purple-500 animate-pulse" />
-                        Afternoon: 1:00 PM - 2:00 PM
-                      </h4>
-                    </div>
-                    <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-100">
-                      {applicants.filter((a) => (a.status === "offered" || a.status === "completed") && a.scheduledTime === "01:00 PM").length} Scheduled
-                    </span>
-                  </div>
-
-                  <div className="space-y-3 max-h-[450px] overflow-y-auto pr-1">
-                    {applicants.filter((a) => (a.status === "offered" || a.status === "completed") && a.scheduledTime === "01:00 PM").length > 0 ? (
-                      applicants
-                        .filter((a) => (a.status === "offered" || a.status === "completed") && a.scheduledTime === "01:00 PM")
-                        .map((app) => (
-                          <div
-                            key={app.id}
-                            className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 hover:border-purple-200 hover:bg-white transition-all shadow-sm space-y-2"
-                          >
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <h5 className="text-xs font-bold text-slate-800">{app.name}</h5>
-                                <span className="text-[9px] text-slate-400 font-mono">#{app.hashId}</span>
-                              </div>
-                              <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-purple-50 text-purple-800 border border-purple-100">
-                                {app.cohort}
-                              </span>
-                            </div>
-
-                            {app.score !== undefined && (
-                              <div className="text-[10px] font-semibold text-slate-600 flex items-center gap-1">
-                                <Award className="h-3 w-3 text-amber-500" /> Score: <span className="font-bold text-slate-800">{app.score.toFixed(1)}/25.0</span>
-                              </div>
-                            )}
-
-                            <div className="flex items-center justify-between pt-2 border-t border-slate-100 mt-1">
-                              <span className="text-[9px] text-slate-400 font-bold uppercase">Timing:</span>
-                              <select
-                                value="01:00 PM"
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  if (val === "revoke_offer") {
-                                    handleRevokeOffer(app.id);
-                                  } else {
-                                    handleRescheduleApplicant(
-                                      app.id,
-                                      val === "unscheduled" ? null : (val as any)
-                                    );
-                                  }
-                                }}
-                                className="text-[10px] font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 outline-none cursor-pointer"
-                              >
-                                <option value="09:00 AM">9:00 AM - 10:00 AM</option>
-                                <option value="10:30 AM">10:30 AM - 11:30 AM</option>
-                                <option value="01:00 PM">1:00 PM - 2:00 PM</option>
-                                <option value="unscheduled">Unschedule to Queue</option>
-                                <option value="revoke_offer">Revoke Offer (Return to Graded)</option>
-                              </select>
-                            </div>
-                          </div>
-                        ))
-                    ) : (
-                      <p className="text-xs text-slate-400 italic text-center py-6">
-                        No candidates scheduled in this block.
-                      </p>
-                    )}
-                  </div>
+              {/* TBD PLACEHOLDER CARD */}
+              <div className="p-12 rounded-3xl border border-dashed border-slate-300 bg-slate-50/60 text-center space-y-4">
+                <div className="h-14 w-14 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center mx-auto shadow-2xs">
+                  <Clock className="h-7 w-7" />
                 </div>
-
+                <div className="space-y-1">
+                  <h4 className="text-base font-bold text-slate-800">
+                    Group Interviews Schedule & Assignments (To Be Determined)
+                  </h4>
+                  <p className="text-xs text-slate-500 max-w-lg mx-auto leading-relaxed">
+                    Group Interview team assignments, case study room allocations, and evaluation panel schedules will be configured and announced following Coffee Chat completion.
+                  </p>
+                </div>
               </div>
             </div>
           )}
@@ -3052,6 +3143,40 @@ Bruin Strategy Board`}
           currentUser={currentUser}
           onClose={() => setSelectedApplicantForProfile(null)}
           onAddComment={handleAddInterviewComment}
+          onSendInterview={(id) => {
+            handleSendInterview(id);
+            setSelectedApplicantForProfile(null);
+          }}
+          onRescindInterview={handleRescindInterview}
+          onSendOffer={(id) => {
+            handleSendOffer(id);
+            setSelectedApplicantForProfile(null);
+          }}
+          onSendReject={(id) => {
+            handleSendReject(id);
+            setSelectedApplicantForProfile(null);
+          }}
+          onUndoRejection={handleUndoRejection}
+          onUpdateScheduledTimes={handleUpdateScheduledTimes}
+        />
+      )}
+
+      {/* CUSTOMIZABLE DECISION EMAIL POPUP MODAL */}
+      {decisionEmailTarget && (
+        <DecisionEmailModal
+          applicant={decisionEmailTarget.applicant}
+          type={decisionEmailTarget.type}
+          onClose={() => setDecisionEmailTarget(null)}
+          onConfirm={(id) => {
+            if (decisionEmailTarget.type === "REJECTION") {
+              executeSendReject(id);
+            } else if (decisionEmailTarget.type === "OFFER") {
+              executeSendOffer(id);
+            } else if (decisionEmailTarget.type === "INTERVIEW") {
+              executeSendInterview(id);
+            }
+          }}
+          showToast={showToast}
         />
       )}
 
