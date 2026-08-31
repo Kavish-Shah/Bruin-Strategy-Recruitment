@@ -12,15 +12,27 @@ import {
   Layers,
 } from "lucide-react";
 import { Applicant } from "./ApplicantCard";
+import {
+  RUBRICS,
+  getApplicantRubricKey,
+  RubricConfig,
+  RubricKey,
+  getRubricTotalPoints,
+  getRubricCriteriaList,
+  getCriterionPercentage,
+  getNormalizedBenchmarks,
+  BenchmarkItem,
+} from "@/utils/rubrics";
 
 interface GradingModalProps {
   applicant: Applicant;
   onClose: () => void;
   onSubmitGrade: (
     applicantId: string,
-    grades: { leadership: number; problemSolving: number; communication: number; essay: number },
+    grades: Record<string, number>,
     notes: string
   ) => void;
+  customRubrics?: Record<RubricKey, RubricConfig>;
 }
 
 function getDriveEmbedUrl(url?: string): string | null {
@@ -49,46 +61,62 @@ export default function GradingModal({
   applicant,
   onClose,
   onSubmitGrade,
+  customRubrics,
 }: GradingModalProps) {
-  const [leadership, setLeadership] = useState(
-    applicant.grades?.leadership || 3.0
-  );
-  const [problemSolving, setProblemSolving] = useState(
-    applicant.grades?.problemSolving || 3.0
-  );
-  const [communication, setCommunication] = useState(
-    applicant.grades?.communication || 3.0
-  );
-  const [essayScore, setEssayScore] = useState(
-    applicant.grades?.essay || 5
-  );
+  const resolvedCustomRubrics = customRubrics || (() => {
+    try {
+      const saved = localStorage.getItem("bsn_custom_rubrics");
+      if (saved) return JSON.parse(saved);
+    } catch (_) {}
+    return null;
+  })();
+
+  const rKey = getApplicantRubricKey(applicant);
+  const activeRubric = resolvedCustomRubrics
+    ? (resolvedCustomRubrics[rKey] || RUBRICS[rKey])
+    : RUBRICS[rKey];
+
+  const criteriaList = getRubricCriteriaList(activeRubric, rKey);
+
+  const [scores, setScores] = useState<Record<string, number>>(() => {
+    const initial: Record<string, number> = {};
+    criteriaList.forEach((c) => {
+      const existing = applicant.grades ? (applicant.grades as any)[c.id] : undefined;
+      const bms = getNormalizedBenchmarks(c).sort((a, b) => a.point - b.point);
+      if (existing !== undefined) {
+        initial[c.id] = Number(existing);
+      } else if (bms.length > 0) {
+        const midIdx = Math.floor(bms.length / 2);
+        initial[c.id] = bms[midIdx].point;
+      } else {
+        initial[c.id] = Math.round(c.maxScore / 2);
+      }
+    });
+    return initial;
+  });
+
   const [notes, setNotes] = useState("");
   const [zoom, setZoom] = useState(100);
   const [showEssay, setShowEssay] = useState(false);
+  const [activeBenchmarkTab, setActiveBenchmarkTab] = useState<Record<string, string>>({});
 
   const embedUrl = getDriveEmbedUrl(applicant.resumeUrl);
 
-  // Calculate overall score (sum of the core rubric + essay score, max 25)
-  const totalScore = leadership + problemSolving + communication + essayScore;
+  const totalMaxPoints = getRubricTotalPoints(activeRubric);
+  const totalEarnedPoints = Object.values(scores).reduce((acc, val) => acc + (Number(val) || 0), 0);
+  const percentageEarned = totalMaxPoints ? ((totalEarnedPoints / totalMaxPoints) * 100).toFixed(1) : "0.0";
+
+  const handleScoreChange = (criterionId: string, val: number) => {
+    setScores((prev) => ({
+      ...prev,
+      [criterionId]: val,
+    }));
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("GradingModal submitting grades:", {
-      leadership,
-      problemSolving,
-      communication,
-      essay: essayScore,
-    }, "notes:", notes);
-    onSubmitGrade(
-      applicant.id,
-      {
-        leadership,
-        problemSolving,
-        communication,
-        essay: essayScore,
-      },
-      notes
-    );
+    console.log("GradingModal submitting grades:", scores, "notes:", notes);
+    onSubmitGrade(applicant.id, scores, notes);
   };
 
   return (
@@ -111,136 +139,113 @@ export default function GradingModal({
             </p>
           </div>
           
-          <button
-            onClick={onClose}
-            className="rounded-xl border border-slate-100 p-2 text-slate-400 hover:bg-slate-55 dark:border-slate-800 dark:hover:bg-slate-900 hover:text-slate-600 dark:hover:text-slate-300 cursor-pointer"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowEssay(!showEssay)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                showEssay
+                  ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700"
+              }`}
+            >
+              <BookOpen className="h-3.5 w-3.5" />
+              {showEssay ? "View Resume" : "View Short Answer Essay"}
+            </button>
+
+            <button
+              onClick={onClose}
+              className="rounded-xl border border-slate-200 p-2 text-slate-400 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-900 hover:text-slate-600 cursor-pointer"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
-        {/* Modal Body - Side-by-Side Split */}
+        {/* Modal Body - Split View */}
         <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
           
-          {/* Left Side: Mock PDF Resume Reader & Essay Box (70% width) */}
-          <div className="w-full md:w-[70%] bg-slate-100 dark:bg-slate-950 flex flex-col overflow-hidden border-b md:border-b-0 md:border-r border-slate-200/80 dark:border-slate-800">
+          {/* Left Side: Resume Reader or Essay Viewer */}
+          <div className="w-full md:w-3/5 bg-slate-100 dark:bg-slate-950 flex flex-col overflow-hidden border-b md:border-b-0 md:border-r border-slate-200/80 dark:border-slate-800">
             
-            {/* Resume Reader (100% height when showEssay is false) */}
-            <div className={`${showEssay ? "h-[72%]" : "h-full"} flex flex-col overflow-hidden border-b border-slate-200 dark:border-slate-800 transition-all duration-300`}>
-              {/* Resume PDF Toolbar */}
-              <div className="h-11 border-b border-slate-200/80 bg-slate-50 dark:border-slate-800 dark:bg-slate-900 px-4 flex items-center justify-between shrink-0">
-                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                  <FileText className="h-3.5 w-3.5" />
-                  Applicant Resume ({zoom}%)
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowEssay(!showEssay)}
-                    className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                      showEssay 
-                        ? "bg-indigo-100 text-indigo-700 border border-indigo-300 dark:bg-indigo-950 dark:text-indigo-300 dark:border-indigo-800"
-                        : "bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-300"
-                    }`}
-                  >
-                    <BookOpen className="h-3.5 w-3.5" />
-                    {showEssay ? "Hide Essay" : "Show Essay Split"}
-                  </button>
-
-                  {applicant.resumeUrl && (
-                    <a
-                      href={applicant.resumeUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all shadow-sm"
-                    >
-                      Open Link ↗
-                    </a>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setZoom(Math.max(50, zoom - 10))}
-                    className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-550 cursor-pointer"
-                    title="Zoom Out"
-                  >
-                    <ZoomOut className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setZoom(Math.min(150, zoom + 10))}
-                    className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-550 cursor-pointer"
-                    title="Zoom In"
-                  >
-                    <ZoomIn className="h-4 w-4" />
-                  </button>
-                  <div className="h-4 w-px bg-slate-300 dark:bg-slate-700 mx-1" />
-                  <button
-                    type="button"
-                    onClick={() => setZoom(100)}
-                    className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-550 cursor-pointer"
-                    title="Reset Zoom"
-                  >
-                    <RotateCw className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Resume Viewer Canvas */}
-              <div className="flex-1 overflow-hidden p-1 flex justify-center items-stretch bg-slate-100 dark:bg-slate-950">
-                {embedUrl ? (
-                  <div
-                    className="w-full h-full bg-white rounded-xl border border-slate-200 dark:border-slate-800 shadow-md overflow-hidden transition-all origin-top duration-200 relative"
-                    style={{ transform: `scale(${zoom / 100})` }}
-                  >
-                    <iframe
-                      src={embedUrl}
-                      className="w-full h-full border-0"
-                      width="100%"
-                      height="100%"
-                      allow="autoplay; fullscreen"
-                      title={`${applicant.name} Resume Viewer`}
-                    />
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-full w-full p-8 text-center bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-                    <FileText className="h-12 w-12 text-slate-300 dark:text-slate-700 mb-4" />
-                    <p className="text-sm font-semibold text-slate-600 dark:text-slate-400">
-                      No resume URL found in database for this applicant.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Optional Collapsible Essay Box */}
-            {showEssay && (
-              <div className="h-[28%] flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 animate-in slide-in-from-bottom-5 duration-200">
-                {/* Essay Toolbar */}
+            {!showEssay ? (
+              <div className="h-full flex flex-col overflow-hidden">
                 <div className="h-11 border-b border-slate-200/80 bg-slate-50 dark:border-slate-800 dark:bg-slate-900 px-4 flex items-center justify-between shrink-0">
-                  <span className="text-xs font-semibold text-slate-550 dark:text-slate-400 flex items-center gap-1.5">
-                    <BookOpen className="h-3.5 w-3.5 text-indigo-500" />
-                    Essay Response
+                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                    <Briefcase className="h-3.5 w-3.5" />
+                    Applicant Resume
                   </span>
-                  <span className="text-[10px] bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold px-2 py-0.5 rounded-full">
-                    Case Study Challenge
-                  </span>
+                  
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setZoom(Math.max(50, zoom - 10))}
+                      className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400"
+                      title="Zoom Out"
+                    >
+                      <ZoomOut className="h-3.5 w-3.5" />
+                    </button>
+                    <span className="text-[11px] font-mono text-slate-500 w-10 text-center">{zoom}%</span>
+                    <button
+                      onClick={() => setZoom(Math.min(150, zoom + 10))}
+                      className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400"
+                      title="Zoom In"
+                    >
+                      <ZoomIn className="h-3.5 w-3.5" />
+                    </button>
+                    {applicant.resumeUrl && (
+                      <a
+                        href={applicant.resumeUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 ml-2"
+                        title="Open in new tab"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                      </a>
+                    )}
+                  </div>
                 </div>
-                {/* Essay Content Area */}
-                <div className="flex-1 overflow-y-auto p-6 bg-slate-55/50 dark:bg-slate-950/20 shadow-inner">
-                  {applicant.shortAnswer ? (
-                    <div className="prose prose-sm prose-slate dark:prose-invert max-w-none">
-                      <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-1">
-                        Application Question: Tell me about yourself.
-                      </h3>
-                      <p className="text-[10px] text-slate-400 dark:text-slate-500 italic mt-0 mb-3">
-                        Word Count: {applicant.shortAnswer.split(/\s+/).filter(Boolean).length} words
-                      </p>
-                      <div className="rounded-xl border border-slate-200/60 dark:border-slate-800 bg-white/70 dark:bg-slate-950/40 p-4 text-xs leading-relaxed text-slate-700 dark:text-slate-300 italic shadow-sm whitespace-pre-wrap">
-                        "{applicant.shortAnswer}"
-                      </div>
+
+                <div className="flex-1 bg-slate-200/60 dark:bg-slate-950 p-4 overflow-auto flex justify-center items-start">
+                  {embedUrl ? (
+                    <div
+                      style={{ transform: `scale(${zoom / 100})`, transformOrigin: "top center" }}
+                      className="w-full h-full min-h-[600px] transition-transform duration-150"
+                    >
+                      <iframe
+                        src={embedUrl}
+                        className="w-full h-full rounded-xl shadow-lg border border-slate-300 dark:border-slate-800 bg-white"
+                        title="Applicant Resume"
+                      />
                     </div>
                   ) : (
-                    <div className="text-xs text-slate-500 italic p-4">
+                    <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-3">
+                      <FileText className="h-12 w-12 stroke-1" />
+                      <p className="text-sm font-medium">No valid resume URL provided for preview.</p>
+                      {applicant.resumeUrl && (
+                        <a
+                          href={applicant.resumeUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs text-indigo-600 underline font-bold"
+                        >
+                          Try opening raw link: {applicant.resumeUrl}
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="h-full flex flex-col p-6 overflow-y-auto space-y-4 bg-white dark:bg-slate-900">
+                <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                  <BookOpen className="h-5 w-5 text-indigo-600" />
+                  <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">
+                    Application Short Answer Essay
+                  </h3>
+                </div>
+                <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200/80 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">
+                  {applicant.shortAnswer || applicant.formResponses?.short_answer || (
+                    <div className="text-xs text-slate-400 italic">
                       No application essay response recorded for this candidate.
                     </div>
                   )}
@@ -250,23 +255,23 @@ export default function GradingModal({
 
           </div>
 
-          {/* Right Side: Rubric Form (40% width) */}
+          {/* Right Side: 9 Rubric Categories Form */}
           <div className="w-full md:w-2/5 bg-white dark:bg-slate-900 flex flex-col overflow-hidden">
             <form onSubmit={handleSubmit} className="flex-1 flex flex-col justify-between overflow-y-auto">
               
               {/* Form Content */}
               <div className="p-6 space-y-6">
                 
-                {/* Rubric Card Alert */}
+                {/* Rubric Banner */}
                 <div className="rounded-2xl bg-indigo-50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-950 p-4">
                   <div className="flex gap-3">
                     <AlertCircle className="h-5 w-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
                     <div>
                       <h4 className="text-sm font-bold text-indigo-950 dark:text-indigo-200">
-                        Grading Standards
+                        {activeRubric.title}
                       </h4>
                       <p className="text-xs text-indigo-700 dark:text-indigo-300 mt-0.5 leading-relaxed">
-                        Score each core criteria from 1.0 to 5.0 and the essay evaluation from 1 to 10. Total score sums up to a maximum of 25.0. Be objective and leave thorough notes.
+                        Evaluate across all 9 rubric categories. Points assigned per category build your total evaluation score out of <strong>{totalMaxPoints} Max Points</strong>.
                       </p>
                     </div>
                   </div>
@@ -275,124 +280,148 @@ export default function GradingModal({
                 {/* Score Summary Display */}
                 <div className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50 p-4 text-center">
                   <div className="text-4xl font-black text-slate-800 dark:text-white">
-                    {totalScore.toFixed(1)}
+                    {totalEarnedPoints.toFixed(1)}
                     <span className="text-lg text-slate-400 dark:text-slate-500 font-normal">
-                      /25.0
+                      /{totalMaxPoints}.0
+                    </span>
+                    <span className="text-base font-extrabold text-indigo-600 ml-2 font-mono">
+                      ({percentageEarned}%)
                     </span>
                   </div>
                   <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mt-1 block">
-                    Calculated Score
+                    Calculated Evaluation Score
                   </span>
                 </div>
 
-                {/* Leadership Score */}
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <label className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                      Leadership
-                    </label>
-                    <span className="text-sm font-black bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-lg dark:bg-indigo-500/10 dark:text-indigo-400">
-                      {leadership.toFixed(1)} / 5.0
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="1"
-                    max="5"
-                    step="0.5"
-                    value={leadership}
-                    onChange={(e) => setLeadership(parseFloat(e.target.value))}
-                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600 dark:bg-slate-800"
-                  />
-                  <div className="flex justify-between text-[10px] text-slate-400 dark:text-slate-500 font-medium">
-                    <span>1.0 - Minimal initiative</span>
-                    <span>3.0 - Solid manager</span>
-                    <span>5.0 - Visionary leader</span>
-                  </div>
-                </div>
+                {/* Render 9 Rubric Categories */}
+                <div className="space-y-6">
+                  {criteriaList.map((criterion, idx) => {
+                    const rawBenchmarks = getNormalizedBenchmarks(criterion);
+                    const benchmarks = [...rawBenchmarks].sort((a, b) => a.point - b.point);
+                    
+                    const currentScore = scores[criterion.id] !== undefined
+                      ? scores[criterion.id]
+                      : (benchmarks.length > 0 ? benchmarks[Math.floor(benchmarks.length / 2)].point : Math.round(criterion.maxScore / 2));
 
-                {/* Problem Solving Score */}
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <label className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                      Problem Solving
-                    </label>
-                    <span className="text-sm font-black bg-amber-50 text-amber-600 px-2 py-0.5 rounded-lg dark:bg-amber-500/10 dark:text-amber-400">
-                      {problemSolving.toFixed(1)} / 5.0
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="1"
-                    max="5"
-                    step="0.5"
-                    value={problemSolving}
-                    onChange={(e) => setProblemSolving(parseFloat(e.target.value))}
-                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-600 dark:bg-slate-800"
-                  />
-                  <div className="flex justify-between text-[10px] text-slate-400 dark:text-slate-500 font-medium">
-                    <span>1.0 - Lacks structure</span>
-                    <span>3.0 - Framework applied</span>
-                    <span>5.0 - Flawless synthesis</span>
-                  </div>
-                </div>
+                    let currentIdx = benchmarks.findIndex((b) => Math.abs(b.point - currentScore) < 0.05);
+                    if (currentIdx === -1 && benchmarks.length > 0) {
+                      let minDiff = Infinity;
+                      benchmarks.forEach((b, bIdx) => {
+                        const diff = Math.abs(b.point - currentScore);
+                        if (diff < minDiff) {
+                          minDiff = diff;
+                          currentIdx = bIdx;
+                        }
+                      });
+                    }
+                    if (currentIdx === -1) currentIdx = 0;
 
-                {/* Communication Score */}
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <label className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                      Communication
-                    </label>
-                    <span className="text-sm font-black bg-teal-50 text-teal-600 px-2 py-0.5 rounded-lg dark:bg-teal-500/10 dark:text-teal-400">
-                      {communication.toFixed(1)} / 5.0
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="1"
-                    max="5"
-                    step="0.5"
-                    value={communication}
-                    onChange={(e) => setCommunication(parseFloat(e.target.value))}
-                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-teal-600 dark:bg-slate-800"
-                  />
-                  <div className="flex justify-between text-[10px] text-slate-400 dark:text-slate-500 font-medium">
-                    <span>1.0 - Hard to follow</span>
-                    <span>3.0 - Structured, clear</span>
-                    <span>5.0 - Extremely persuasive</span>
-                  </div>
-                </div>
+                    const selectedBm = benchmarks[currentIdx] || benchmarks[0];
+                    const weightPct = getCriterionPercentage(criterion, activeRubric);
 
-                {/* Essay Evaluation Score Slider */}
-                <div className="space-y-2 pt-4 border-t border-slate-150 dark:border-slate-800">
-                  <div className="flex justify-between items-center">
-                    <label className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                      Essay Evaluation
-                    </label>
-                    <span className="text-sm font-black bg-blue-50 text-blue-600 px-2 py-0.5 rounded-lg dark:bg-blue-500/10 dark:text-blue-400">
-                      {essayScore} / 10
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="1"
-                    max="10"
-                    step="1"
-                    value={essayScore}
-                    onChange={(e) => setEssayScore(parseInt(e.target.value))}
-                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600 dark:bg-slate-800"
-                  />
-                  <div className="flex justify-between text-[10px] text-slate-400 dark:text-slate-500 font-medium">
-                    <span>1 - Weak logic</span>
-                    <span>5 - Capable analysis</span>
-                    <span>10 - C-Suite ready</span>
-                  </div>
+                    return (
+                      <div key={criterion.id} className="space-y-2 p-3.5 rounded-2xl border border-slate-150 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <label className="text-xs font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                              <span className="text-slate-400 font-mono text-[11px]">{idx + 1}.</span> {criterion.name}
+                            </label>
+                            <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">{criterion.description}</p>
+                          </div>
+                          
+                          <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-300 dark:border-slate-700" title="Calculated Category Weight Percentage (Read-only)">
+                              {weightPct}
+                            </span>
+                            <span className="text-xs font-black bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-lg dark:bg-indigo-500/10 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-900 font-mono">
+                              {currentScore.toFixed(1)} / {criterion.maxScore}.0 pts
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Snapping Point Slider */}
+                        {benchmarks.length > 0 ? (
+                          <div className="space-y-1">
+                            <input
+                              type="range"
+                              min={0}
+                              max={benchmarks.length - 1}
+                              step={1}
+                              value={currentIdx}
+                              onChange={(e) => {
+                                const targetIdx = parseInt(e.target.value, 10);
+                                const targetBm = benchmarks[targetIdx];
+                                if (targetBm) {
+                                  handleScoreChange(criterion.id, targetBm.point);
+                                }
+                              }}
+                              className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600 dark:bg-slate-800"
+                            />
+                            <div className="flex justify-between text-[10px] font-mono font-bold text-slate-400 px-1">
+                              {benchmarks.map((bm, bIdx) => (
+                                <span
+                                  key={bm.id || bIdx}
+                                  onClick={() => handleScoreChange(criterion.id, bm.point)}
+                                  className={`cursor-pointer hover:text-indigo-600 transition-colors ${
+                                    currentIdx === bIdx ? "text-indigo-600 dark:text-indigo-400 font-extrabold" : ""
+                                  }`}
+                                >
+                                  {bm.point.toFixed(1)} Pts
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <input
+                            type="range"
+                            min="0"
+                            max={criterion.maxScore}
+                            step="0.5"
+                            value={currentScore}
+                            onChange={(e) => handleScoreChange(criterion.id, parseFloat(e.target.value))}
+                            className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600 dark:bg-slate-800"
+                          />
+                        )}
+
+                        {/* Benchmark Guidance Points */}
+                        <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800/80 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold uppercase text-slate-400">Benchmark Guidance Points:</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                            {benchmarks.map((bm, bIdx) => {
+                              const isSelected = currentIdx === bIdx;
+                              return (
+                                <button
+                                  key={bm.id || bIdx}
+                                  type="button"
+                                  onClick={() => handleScoreChange(criterion.id, bm.point)}
+                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold transition-all border shrink-0 cursor-pointer ${
+                                    isSelected
+                                      ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                                      : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  {bm.point.toFixed(1)} Pts
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {selectedBm && (
+                            <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed font-sans shadow-2xs">
+                              <strong className="font-bold text-indigo-600 dark:text-indigo-400">{selectedBm.point.toFixed(1)} Points Guidance:</strong> {selectedBm.guidance}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {/* Notes Textarea */}
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                    Evaluation Notes
+                <div className="space-y-2 pt-2">
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">
+                    Evaluation Notes & Strengths
                   </label>
                   <textarea
                     placeholder="Provide specific notes regarding resumes, strengths, weaknesses, and performance markers..."
@@ -406,7 +435,7 @@ export default function GradingModal({
               </div>
 
               {/* Form Action Footer */}
-              <div className="border-t border-slate-200/80 bg-slate-50 p-6 dark:border-slate-800 dark:bg-slate-950/60 flex items-center justify-between gap-3">
+              <div className="border-t border-slate-200/80 bg-slate-50 p-6 dark:border-slate-800 dark:bg-slate-950/60 flex items-center justify-between gap-3 shrink-0">
                 <button
                   type="button"
                   onClick={onClose}
@@ -418,7 +447,7 @@ export default function GradingModal({
                   type="submit"
                   className="flex-1 h-10 rounded-xl bg-blue-600 text-xs font-bold text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 transition-colors shadow-sm cursor-pointer"
                 >
-                  Submit Evaluation
+                  Submit Evaluation ({totalEarnedPoints.toFixed(1)} Pts)
                 </button>
               </div>
             </form>

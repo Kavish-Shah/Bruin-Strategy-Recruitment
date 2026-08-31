@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   X,
   FileText,
@@ -13,15 +13,32 @@ import {
   Calendar,
   Clock,
   User,
+  Users,
+  CheckCircle,
+  XCircle,
+  Scale,
 } from "lucide-react";
 import { Applicant, InterviewComment } from "./ApplicantCard";
+import {
+  RUBRICS,
+  getApplicantRubricKey,
+  getRubricCriteriaList,
+  getRubricTotalPoints,
+  RubricKey,
+  RubricConfig,
+} from "@/utils/rubrics";
 
 interface CandidateProfileModalProps {
   applicant: Applicant;
   currentUser: { name: string; email: string; role: string };
+  isCalibratedView?: boolean;
+  graderCalibrationOffsets?: Record<string, number>;
+  customRubrics?: Record<RubricKey, RubricConfig>;
   onClose: () => void;
   onAddComment: (applicantId: string, commentText: string, author: string) => void;
   onSendInterview?: (id: string) => void;
+  onAdvanceToGroupInterview?: (id: string) => void;
+  onReturnToCoffeeChat?: (id: string) => void;
   onRescindInterview?: (id: string) => void;
   onSendOffer?: (id: string) => void;
   onSendReject?: (id: string) => void;
@@ -52,12 +69,133 @@ function getDriveEmbedUrl(url?: string): string | null {
   return trimmed;
 }
 
+function cleanTimeStr(t: any): string | null {
+  if (!t) return null;
+  const str = String(t).trim();
+  if (str === "" || str === "null" || str === "undefined" || str.toLowerCase() === "not assigned" || str.toLowerCase() === "none") {
+    return null;
+  }
+  return str;
+}
+
+function extractTimeFromRawPayload(raw: any, keywords: string[]): string | null {
+  if (!raw || typeof raw !== "object") return null;
+  for (const [k, v] of Object.entries(raw)) {
+    const keyLower = k.toLowerCase();
+    const matchesAll = keywords.every((kw) => keyLower.includes(kw.toLowerCase()));
+    if (matchesAll && typeof v === "string" && v.trim() !== "") {
+      return v.trim();
+    }
+  }
+  return null;
+}
+
+function getCoffeeChatSubmissionTimes(formResponses: any): { scheduledTime: string | null; fallbackTime: string | null } {
+  const resp = formResponses || {};
+
+  let primary = resp.coffeeChatScheduledTime || resp.coffeeChatPrimarySlot || null;
+  let fallback = resp.coffeeChatFallbackTime || resp.coffeeChatFallbackSlot || null;
+
+  if (fallback && (fallback.includes("5:25") || fallback.includes("6:25") || fallback.includes("7:25") || fallback.includes("5:40") || fallback.includes("6:40"))) {
+    fallback = null;
+  }
+  if (primary && (primary.includes("5:25") || primary.includes("6:25") || primary.includes("7:25") || primary.includes("5:40") || primary.includes("6:40"))) {
+    primary = null;
+  }
+
+  const rawObj = resp.rawPayload;
+  if (!primary && rawObj) {
+    primary =
+      extractTimeFromRawPayload(rawObj, ["coffee", "preferred"]) ||
+      extractTimeFromRawPayload(rawObj, ["coffee", "primary"]) ||
+      extractTimeFromRawPayload(rawObj, ["coffee", "first"]) ||
+      extractTimeFromRawPayload(rawObj, ["coffee", "time"]) ||
+      extractTimeFromRawPayload(rawObj, ["coffee", "slot"]) ||
+      extractTimeFromRawPayload(rawObj, ["coffee"]);
+  }
+  if (!fallback && rawObj) {
+    fallback =
+      extractTimeFromRawPayload(rawObj, ["coffee", "second"]) ||
+      extractTimeFromRawPayload(rawObj, ["coffee", "backup"]) ||
+      extractTimeFromRawPayload(rawObj, ["coffee", "fallback"]) ||
+      extractTimeFromRawPayload(rawObj, ["coffee", "alternative"]);
+  }
+
+  const groupPrimary = resp.groupPrimarySlot || resp.groupScheduledTime;
+  if (!primary && resp.primarySlot && resp.primarySlot !== groupPrimary && !resp.primarySlot.includes("5:25") && !resp.primarySlot.includes("6:25") && !resp.primarySlot.includes("7:25") && !resp.primarySlot.includes("5:40") && !resp.primarySlot.includes("6:40")) {
+    primary = resp.primarySlot;
+  }
+  if (!primary && resp.scheduledTime && resp.scheduledTime !== groupPrimary && !resp.scheduledTime.includes("5:25") && !resp.scheduledTime.includes("6:25") && !resp.scheduledTime.includes("7:25") && !resp.scheduledTime.includes("5:40") && !resp.scheduledTime.includes("6:40")) {
+    primary = resp.scheduledTime;
+  }
+
+  const groupFallback = resp.groupFallbackSlot || resp.groupFallbackTime;
+  if (!fallback && resp.fallbackSlot && resp.fallbackSlot !== groupFallback && !resp.fallbackSlot.includes("5:25") && !resp.fallbackSlot.includes("6:25") && !resp.fallbackSlot.includes("7:25") && !resp.fallbackSlot.includes("5:40") && !resp.fallbackSlot.includes("6:40")) {
+    fallback = resp.fallbackSlot;
+  }
+  if (!fallback && resp.fallbackTime && resp.fallbackTime !== groupFallback && !resp.fallbackTime.includes("5:25") && !resp.fallbackTime.includes("6:25") && !resp.fallbackTime.includes("7:25") && !resp.fallbackTime.includes("5:40") && !resp.fallbackTime.includes("6:40")) {
+    fallback = resp.fallbackTime;
+  }
+
+  return {
+    scheduledTime: cleanTimeStr(primary),
+    fallbackTime: cleanTimeStr(fallback),
+  };
+}
+
+function getGroupInterviewSubmissionTimes(formResponses: any): { scheduledTime: string | null; fallbackTime: string | null } {
+  const resp = formResponses || {};
+
+  let primary = resp.groupPrimarySlot || resp.groupScheduledTime || null;
+  let fallback = resp.groupFallbackSlot || resp.groupFallbackTime || null;
+
+  if (fallback && (fallback.includes("5:30") || fallback.includes("6:35") || fallback.includes("7:40") || fallback.includes("5:45") || fallback.includes("6:50"))) {
+    fallback = null;
+  }
+  if (primary && (primary.includes("5:30") || primary.includes("6:35") || primary.includes("7:40") || primary.includes("5:45") || primary.includes("6:50"))) {
+    primary = null;
+  }
+
+  const rawObj = resp.rawGroupPayload || resp.rawPayload;
+  if (!primary && rawObj) {
+    primary =
+      extractTimeFromRawPayload(rawObj, ["group", "preferred"]) ||
+      extractTimeFromRawPayload(rawObj, ["group", "primary"]) ||
+      extractTimeFromRawPayload(rawObj, ["group", "time"]) ||
+      extractTimeFromRawPayload(rawObj, ["group"]);
+  }
+  if (!fallback && rawObj) {
+    fallback =
+      extractTimeFromRawPayload(rawObj, ["group", "second"]) ||
+      extractTimeFromRawPayload(rawObj, ["group", "fallback"]) ||
+      extractTimeFromRawPayload(rawObj, ["group", "backup"]) ||
+      extractTimeFromRawPayload(rawObj, ["group", "alternative"]);
+  }
+
+  if (!primary && resp.primarySlot && (resp.primarySlot.includes("5:25") || resp.primarySlot.includes("6:25") || resp.primarySlot.includes("7:25") || resp.primarySlot.includes("5:40") || resp.primarySlot.includes("6:40"))) {
+    primary = resp.primarySlot;
+  }
+  if (!fallback && resp.fallbackSlot && (resp.fallbackSlot.includes("5:25") || resp.fallbackSlot.includes("6:25") || resp.fallbackSlot.includes("7:25") || resp.fallbackSlot.includes("5:40") || resp.fallbackSlot.includes("6:40"))) {
+    fallback = resp.fallbackSlot;
+  }
+
+  return {
+    scheduledTime: cleanTimeStr(primary),
+    fallbackTime: cleanTimeStr(fallback),
+  };
+}
+
 export default function CandidateProfileModal({
   applicant,
   currentUser,
+  isCalibratedView = false,
+  graderCalibrationOffsets = {},
+  customRubrics,
   onClose,
   onAddComment,
   onSendInterview,
+  onAdvanceToGroupInterview,
+  onReturnToCoffeeChat,
   onRescindInterview,
   onSendOffer,
   onSendReject,
@@ -71,11 +209,50 @@ export default function CandidateProfileModal({
   const [primaryTimeInput, setPrimaryTimeInput] = useState(applicant.scheduledTime || "");
   const [fallbackTimeInput, setFallbackTimeInput] = useState(applicant.fallbackTime || "");
 
+  useEffect(() => {
+    setPrimaryTimeInput(applicant.scheduledTime || "");
+    setFallbackTimeInput(applicant.fallbackTime || "");
+  }, [applicant.id, applicant.scheduledTime, applicant.fallbackTime]);
+
+  const resolvedCustomRubrics = customRubrics || (() => {
+    try {
+      const saved = localStorage.getItem("bsn_custom_rubrics");
+      if (saved) return JSON.parse(saved);
+    } catch (_) {}
+    return null;
+  })();
+
+  const rKey = getApplicantRubricKey(applicant);
+  const activeRubric = resolvedCustomRubrics
+    ? (resolvedCustomRubrics[rKey] || RUBRICS[rKey])
+    : RUBRICS[rKey];
+
+  const criteriaList = getRubricCriteriaList(activeRubric, rKey);
+
+  const criteriaNameMap = useMemo(() => {
+    const map: Record<string, { name: string; maxScore: number }> = {};
+    criteriaList.forEach((c) => {
+      map[c.id] = { name: c.name, maxScore: c.maxScore };
+      const normalizedKey = c.name.toLowerCase().replace(/[^a-z0-9]/g, "");
+      map[normalizedKey] = { name: c.name, maxScore: c.maxScore };
+    });
+
+    // Add standard key mappings
+    map["leadership"] = map["leadership"] || { name: "Leadership & Initiative", maxScore: 5.0 };
+    map["problemSolving"] = map["problemSolving"] || { name: "Problem Solving & Aptitude", maxScore: 5.0 };
+    map["problem_solving"] = map["problem_solving"] || { name: "Problem Solving & Aptitude", maxScore: 5.0 };
+    map["communication"] = map["communication"] || { name: "Executive Communication", maxScore: 5.0 };
+    map["articulateness"] = map["articulateness"] || { name: "Executive Communication", maxScore: 5.0 };
+    map["essay"] = map["essay"] || { name: "Short Answer Essay & Vision", maxScore: 10.0 };
+
+    return map;
+  }, [criteriaList]);
+
   const embedUrl = useMemo(() => getDriveEmbedUrl(applicant.resumeUrl), [applicant.resumeUrl]);
   
   const handleSaveTimes = async () => {
     if (onUpdateScheduledTimes) {
-      await onUpdateScheduledTimes(applicant.id, primaryTimeInput || null, fallbackTimeInput || null);
+      await onUpdateScheduledTimes(applicant.id, primaryTimeInput.trim() || null, fallbackTimeInput.trim() || null);
       setIsEditingTimes(false);
     }
   };
@@ -95,7 +272,7 @@ export default function CandidateProfileModal({
         <div className="flex items-center justify-between border-b border-slate-200/80 bg-white px-6 py-2.5 shrink-0 dark:border-slate-800 dark:bg-slate-950">
           <div>
             <div className="flex items-center gap-2">
-              <span className="rounded-lg bg-indigo-500/10 p-1.5 text-indigo-650 dark:text-indigo-400">
+              <span className="rounded-lg bg-indigo-500/10 p-1.5 text-indigo-600 dark:text-indigo-400">
                 <User className="h-5 w-5" />
               </span>
               <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">
@@ -134,28 +311,76 @@ export default function CandidateProfileModal({
               </button>
             )}
 
+            {currentUser.role === "ADMIN" && applicant.status === "interview" && onAdvanceToGroupInterview && (
+              <button
+                type="button"
+                onClick={() => onAdvanceToGroupInterview(applicant.id)}
+                className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold px-3.5 py-1.5 rounded-xl transition-all shadow-sm cursor-pointer mr-2"
+                title="Advance candidate to Group Interview stage"
+              >
+                <Users className="h-4 w-4" />
+                Send to Group Interview
+              </button>
+            )}
+
             {currentUser.role === "ADMIN" && applicant.status === "interview" && onRescindInterview && (
               <button
                 type="button"
                 onClick={() => onRescindInterview(applicant.id)}
                 className="flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-xs font-bold px-3.5 py-1.5 rounded-xl transition-all shadow-sm cursor-pointer mr-2"
-                title="Rescind interview offer and return candidate to graded list"
+                title="Rescind Coffee Chat offer and return candidate to graded list"
               >
                 <RotateCw className="h-4 w-4" />
-                Rescind Interview Offer
+                Rescind Coffee Chat Offer
               </button>
             )}
 
-            {currentUser.role === "ADMIN" && !["interview", "offered", "rejected"].includes(applicant.status) && (
+            {currentUser.role === "ADMIN" && applicant.status === "group_interview" && (
               <div className="flex items-center gap-2 mr-2">
-                {onSendInterview && applicant.status !== "interview" && (
+                {onSendOffer && (
+                  <button
+                    type="button"
+                    onClick={() => onSendOffer(applicant.id)}
+                    className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all shadow-sm cursor-pointer"
+                  >
+                    <CheckCircle className="h-4 w-4" />
+                    Extend Final Offer
+                  </button>
+                )}
+                {onSendReject && (
+                  <button
+                    type="button"
+                    onClick={() => onSendReject(applicant.id)}
+                    className="flex items-center gap-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold px-3 py-1.5 rounded-xl transition-all shadow-sm cursor-pointer"
+                  >
+                    <XCircle className="h-4 w-4" />
+                    Send Rejection
+                  </button>
+                )}
+                {onReturnToCoffeeChat && (
+                  <button
+                    type="button"
+                    onClick={() => onReturnToCoffeeChat(applicant.id)}
+                    className="flex items-center gap-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold px-3.5 py-1.5 rounded-xl transition-all shadow-sm cursor-pointer"
+                    title="Return candidate to Coffee Chat stage"
+                  >
+                    <RotateCw className="h-4 w-4" />
+                    Return to Coffee Chat
+                  </button>
+                )}
+              </div>
+            )}
+
+            {currentUser.role === "ADMIN" && !["interview", "group_interview", "offered", "rejected"].includes(applicant.status) && (
+              <div className="flex items-center gap-2 mr-2">
+                {onSendInterview && (
                   <button
                     type="button"
                     onClick={() => onSendInterview(applicant.id)}
                     className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all shadow-sm cursor-pointer"
                   >
                     <Calendar className="h-4 w-4" />
-                    Send to Interview
+                    Send to Coffee Chat
                   </button>
                 )}
                 {onSendOffer && (
@@ -317,52 +542,175 @@ export default function CandidateProfileModal({
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
               
               {/* Scorecard Overview */}
-              <div className="rounded-2xl border border-slate-200/80 bg-slate-50/40 p-5 space-y-4 dark:border-slate-800 dark:bg-slate-950/20">
-                <div className="flex justify-between items-center border-b border-slate-200/80 pb-2">
-                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">Evaluation Scorecard</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-lg font-black text-indigo-650">
-                      {applicant.score !== undefined ? applicant.score.toFixed(1) : "--"}
-                    </span>
-                    <span className="text-xs text-slate-500">/25.0</span>
-                  </div>
-                </div>
+              {(() => {
+                const isCalibrated = Boolean(isCalibratedView);
+                const offsets = graderCalibrationOffsets || {};
 
-                {applicant.grades ? (
-                  <div className="grid grid-cols-4 gap-2 text-center text-xs">
-                    <div className="bg-white p-2 rounded-xl border border-slate-200/60 shadow-sm">
-                      <span className="text-[10px] text-slate-400 font-bold uppercase block">Lead</span>
-                      <span className="font-black text-slate-800">{applicant.grades.leadership}/5.0</span>
+                const getGraderCalibratedScore = (gInfo: any) => {
+                  if (!gInfo || gInfo.score === undefined) return undefined;
+                  if (!isCalibrated) return gInfo.score;
+                  const offset = offsets[gInfo.graderId] !== undefined ? offsets[gInfo.graderId] : (offsets[gInfo.graderName] !== undefined ? offsets[gInfo.graderName] : 0);
+                  const maxPts = getRubricTotalPoints(activeRubric);
+                  return Math.max(0, Math.min(maxPts, parseFloat((gInfo.score + offset).toFixed(1))));
+                };
+
+                const getGraderOffset = (gInfo: any) => {
+                  if (!gInfo || gInfo.score === undefined) return 0;
+                  return offsets[gInfo.graderId] !== undefined ? offsets[gInfo.graderId] : (offsets[gInfo.graderName] !== undefined ? offsets[gInfo.graderName] : 0);
+                };
+
+                const completedGraders = (applicant.assignedGraders || []).filter((g) => g.status === "completed" && g.score !== undefined);
+                const displayOverallScore = completedGraders.length > 0
+                  ? parseFloat((completedGraders.map((g) => getGraderCalibratedScore(g) || 0).reduce((a, b) => a + b, 0) / completedGraders.length).toFixed(1))
+                  : applicant.score;
+
+                return (
+                  <div className="rounded-2xl border border-slate-200/80 bg-slate-50/40 p-5 space-y-4 dark:border-slate-800 dark:bg-slate-950/20">
+                    <div className="flex justify-between items-center border-b border-slate-200/80 pb-2">
+                      <div>
+                        <span className="text-xs font-bold text-slate-800 uppercase tracking-wider block flex items-center gap-1.5">
+                          {isCalibrated && <Scale className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" />}
+                          {isCalibrated ? "⚡ Calibrated Overall Score" : "Overall Evaluation Score"}
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          {isCalibrated && applicant.score !== undefined
+                            ? `Normalized average (Raw Average: ${applicant.score.toFixed(1)})`
+                            : "Average of Grader 1 & Grader 2"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-xl font-black ${isCalibrated ? "text-violet-600 dark:text-violet-400" : "text-indigo-600"}`}>
+                          {displayOverallScore !== undefined ? displayOverallScore.toFixed(1) : "--"}
+                        </span>
+                        <span className="text-xs text-slate-500">/{getRubricTotalPoints(activeRubric).toFixed(1)}</span>
+                      </div>
                     </div>
-                    <div className="bg-white p-2 rounded-xl border border-slate-200/60 shadow-sm">
-                      <span className="text-[10px] text-slate-400 font-bold uppercase block">Solve</span>
-                      <span className="font-black text-slate-800">{applicant.grades.problemSolving}/5.0</span>
-                    </div>
-                    <div className="bg-white p-2 rounded-xl border border-slate-200/60 shadow-sm">
-                      <span className="text-[10px] text-slate-400 font-bold uppercase block">Comm</span>
-                      <span className="font-black text-slate-800">{applicant.grades.communication}/5.0</span>
-                    </div>
-                    <div className="bg-white p-2 rounded-xl border border-slate-200/60 shadow-sm">
-                      <span className="text-[10px] text-slate-400 font-bold uppercase block">Essay</span>
-                      <span className="font-black text-slate-800">
-                        {applicant.grades.essay !== undefined ? `${applicant.grades.essay}/10` : "--"}
-                      </span>
-                    </div>
+
+                    {/* Individual Dual Grader Breakdowns */}
+                    {applicant.assignedGraders && applicant.assignedGraders.length > 0 ? (
+                      <div className="space-y-3">
+                        {applicant.assignedGraders.map((gInfo, idx) => {
+                          const gOffset = getGraderOffset(gInfo);
+                          const calScore = getGraderCalibratedScore(gInfo);
+
+                          return (
+                            <div key={idx} className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-2.5">
+                              <div className="flex justify-between items-center text-xs border-b border-slate-100 dark:border-slate-800 pb-2">
+                                <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                                  <span className="text-[10px] bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-black px-2 py-0.5 rounded-md border border-indigo-200 dark:border-indigo-800">
+                                    Grader {idx + 1}
+                                  </span>
+                                  {gInfo.graderName}
+                                </span>
+                                <div className="flex items-center gap-1.5">
+                                  {isCalibrated && gOffset !== 0 && gInfo.score !== undefined && (
+                                    <span className="text-[10px] font-bold text-slate-400">
+                                      Raw: {gInfo.score.toFixed(1)} ({gOffset > 0 ? "+" : ""}{gOffset.toFixed(1)})
+                                    </span>
+                                  )}
+                                  <span className={`text-xs font-black px-2.5 py-0.5 rounded-lg border ${
+                                    gInfo.status === "completed" && gInfo.score !== undefined
+                                      ? isCalibrated
+                                        ? "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-300"
+                                        : "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300"
+                                      : "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300"
+                                  }`}>
+                                    {gInfo.status === "completed" && gInfo.score !== undefined
+                                      ? `${(isCalibrated ? calScore : gInfo.score)?.toFixed(1)} / ${getRubricTotalPoints(activeRubric).toFixed(1)}`
+                                      : "Pending Evaluation"}
+                                  </span>
+                                </div>
+                              </div>
+
+                        {/* Dynamic Category Sub-Scores Grid pulling directly from rubric */}
+                        {gInfo.grades && Object.keys(gInfo.grades).length > 0 ? (
+                          <div className="grid grid-cols-2 gap-2 text-center text-xs">
+                            {Object.entries(gInfo.grades).map(([catKey, catVal]) => {
+                              const normKey = catKey.toLowerCase().replace(/[^a-z0-9]/g, "");
+                              const match = criteriaNameMap[catKey] || criteriaNameMap[normKey];
+                              const categoryTitle = match
+                                ? match.name
+                                : catKey
+                                    .replace(/_/g, " ")
+                                    .replace(/([A-Z])/g, " $1")
+                                    .trim();
+                              const maxPts = match ? match.maxScore : 5.0;
+
+                              return (
+                                <div key={catKey} className="bg-slate-50 dark:bg-slate-950/50 p-2 rounded-xl border border-slate-150 dark:border-slate-800 flex flex-col justify-between">
+                                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-extrabold uppercase truncate block" title={categoryTitle}>
+                                    {categoryTitle}
+                                  </span>
+                                  <span className="font-extrabold text-indigo-600 dark:text-indigo-400 font-mono text-xs mt-1">
+                                    {Number(catVal || 0).toFixed(1)} / {maxPts.toFixed(1)} pts
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : applicant.grades && idx === 0 ? (
+                          <div className="grid grid-cols-2 gap-2 text-center text-xs">
+                            {Object.entries(applicant.grades).map(([catKey, catVal]) => {
+                              const normKey = catKey.toLowerCase().replace(/[^a-z0-9]/g, "");
+                              const match = criteriaNameMap[catKey] || criteriaNameMap[normKey];
+                              const categoryTitle = match
+                                ? match.name
+                                : catKey
+                                    .replace(/_/g, " ")
+                                    .replace(/([A-Z])/g, " $1")
+                                    .trim();
+                              const maxPts = match ? match.maxScore : 5.0;
+
+                              return (
+                                <div key={catKey} className="bg-slate-50 dark:bg-slate-950/50 p-2 rounded-xl border border-slate-150 dark:border-slate-800 flex flex-col justify-between">
+                                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-extrabold uppercase truncate block" title={categoryTitle}>
+                                    {categoryTitle}
+                                  </span>
+                                  <span className="font-extrabold text-indigo-600 dark:text-indigo-400 font-mono text-xs mt-1">
+                                    {Number(catVal || 0).toFixed(1)} / {maxPts.toFixed(1)} pts
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-[10px] text-slate-400 italic text-center py-1">Evaluation in progress...</p>
+                        )}
+
+                        {gInfo.notes && (
+                          <div className="text-[11px] text-slate-600 dark:text-slate-400 italic bg-slate-50 dark:bg-slate-950/40 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
+                            "{gInfo.notes}"
+                          </div>
+                        )}
+                      </div>
+                    ); })}
                   </div>
                 ) : (
-                  <p className="text-xs text-slate-450 italic text-center">Unrated</p>
+                  <div className="text-center py-2">
+                    <p className="text-xs text-slate-450 italic">No Graders Assigned Yet</p>
+                  </div>
                 )}
               </div>
+            );
+          })()}
 
               {/* Status & Grader Metadata */}
               <div className="grid grid-cols-2 gap-4 text-xs">
                 <div className="rounded-xl border border-slate-100 p-3 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-950/20">
-                  <span className="text-slate-400 block font-bold uppercase text-[9px] tracking-wider">Status</span>
-                  <span className="font-black text-slate-700 dark:text-slate-300 capitalize">{applicant.status.replace("_", " ")}</span>
+                  <span className="text-slate-400 block font-bold uppercase text-[9px] tracking-wider">Evaluation Status</span>
+                  <span className="font-black text-slate-700 dark:text-slate-300 capitalize">
+                    {applicant.status === "interview"
+                      ? "Coffee Chat"
+                      : applicant.status === "group_interview"
+                      ? "Group Interview"
+                      : applicant.status.replace("_", " ")}
+                  </span>
                 </div>
                 <div className="rounded-xl border border-slate-100 p-3 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-950/20">
-                  <span className="text-slate-400 block font-bold uppercase text-[9px] tracking-wider">Assigned Grader</span>
-                  <span className="font-black text-slate-700 dark:text-slate-300">{applicant.assignedGraderName || "Not Assigned"}</span>
+                  <span className="text-slate-400 block font-bold uppercase text-[9px] tracking-wider">Total Graders</span>
+                  <span className="font-black text-slate-700 dark:text-slate-300">
+                    {applicant.assignedGraders ? `${applicant.assignedGraders.filter(g => g.status === "completed").length} / ${applicant.assignedGraders.length} Graded` : "0 Assigned"}
+                  </span>
                 </div>
               </div>
 
@@ -450,23 +798,107 @@ export default function CandidateProfileModal({
               </div>
 
               {/* Google Form Responses Record */}
-              {applicant.formResponses && (
-                <div className="rounded-2xl border border-emerald-200 p-4 bg-emerald-50/40 space-y-2 dark:border-emerald-950 dark:bg-emerald-950/20">
+              {applicant.formResponses && Object.keys(applicant.formResponses).length > 0 ? (
+                <div className="rounded-2xl border border-emerald-200 p-4 bg-emerald-50/40 space-y-3 dark:border-emerald-950 dark:bg-emerald-950/20">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-xs text-emerald-800 dark:text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
                       <FileText className="h-3.5 w-3.5 text-emerald-600" />
-                      Saved Google Form Submission
+                      Recorded Google Form Submission
                     </span>
-                    {applicant.formResponses.submittedAt && (
-                      <span className="text-[10px] text-emerald-600 font-mono">
-                        {new Date(applicant.formResponses.submittedAt).toLocaleDateString()}
+                    {(applicant.formResponses.submittedAt || applicant.formResponses.lastGroupFormSubmit) && (
+                      <span className="text-[10px] text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full font-mono">
+                        {new Date(applicant.formResponses.submittedAt || applicant.formResponses.lastGroupFormSubmit).toLocaleString()}
                       </span>
                     )}
                   </div>
-                  <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-emerald-100 dark:border-emerald-900 text-xs space-y-1 font-mono text-slate-700 dark:text-slate-300">
-                    <p><span className="font-bold text-slate-500">Primary Slot:</span> {applicant.formResponses.primarySlot || "N/A"}</p>
-                    <p><span className="font-bold text-slate-500">Fallback Slot:</span> {applicant.formResponses.fallbackSlot || "N/A"}</p>
+
+                  <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-emerald-100 dark:border-emerald-900 text-xs space-y-2 text-slate-700 dark:text-slate-300">
+                    {/* Coffee Chat Choices */}
+                    {(() => {
+                      const coffeeChoices = getCoffeeChatSubmissionTimes(applicant.formResponses);
+                      if (!coffeeChoices.scheduledTime && !coffeeChoices.fallbackTime) return null;
+                      return (
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-extrabold text-indigo-700 dark:text-indigo-400 uppercase tracking-wide flex items-center gap-1">
+                            ☕ Coffee Chat Submitted Choices
+                          </span>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="bg-indigo-50/60 dark:bg-indigo-950/30 p-2 rounded-lg border border-indigo-200/60">
+                              <span className="text-[9px] font-bold text-indigo-700 block uppercase">Primary Choice</span>
+                              <span className="font-semibold text-slate-800 dark:text-slate-200 text-xs">
+                                {coffeeChoices.scheduledTime || "Not Submitted"}
+                              </span>
+                            </div>
+                            <div className="bg-slate-50 dark:bg-slate-950/30 p-2 rounded-lg border border-slate-200/60">
+                              <span className="text-[9px] font-bold text-slate-600 block uppercase">Fallback Choice</span>
+                              <span className="font-semibold text-slate-800 dark:text-slate-200 text-xs">
+                                {coffeeChoices.fallbackTime || "Not Submitted"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Group Interview Choices */}
+                    {(() => {
+                      const groupChoices = getGroupInterviewSubmissionTimes(applicant.formResponses);
+                      if (!groupChoices.scheduledTime && !groupChoices.fallbackTime) return null;
+                      return (
+                        <div className="space-y-1 pt-1.5 border-t border-emerald-100 dark:border-emerald-900/40">
+                          <span className="text-[10px] font-extrabold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1">
+                            👥 Group Interview Submitted Choices
+                          </span>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="bg-emerald-50/60 dark:bg-emerald-950/30 p-2 rounded-lg border border-emerald-200/60">
+                              <span className="text-[9px] font-bold text-emerald-700 block uppercase">Primary Choice</span>
+                              <span className="font-semibold text-slate-800 dark:text-slate-200 text-xs">
+                                {groupChoices.scheduledTime || "Not Submitted"}
+                              </span>
+                            </div>
+                            <div className="bg-amber-50/60 dark:bg-amber-950/30 p-2 rounded-lg border border-amber-200/60">
+                              <span className="text-[9px] font-bold text-amber-700 block uppercase">Fallback Choice</span>
+                              <span className="font-semibold text-slate-800 dark:text-slate-200 text-xs">
+                                {groupChoices.fallbackTime || "Not Submitted"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Raw Google Form Question Breakdown */}
+                    {(() => {
+                      const raw = applicant.formResponses.rawGroupPayload || applicant.formResponses.rawPayload || applicant.formResponses;
+                      const rawEntries = Object.entries(raw).filter(
+                        ([k]) => !["stageStatus", "submittedAt", "rawPayload", "rawGroupPayload", "lastGroupFormSubmit"].includes(k)
+                      );
+
+                      if (rawEntries.length === 0) return null;
+
+                      return (
+                        <div className="pt-2 border-t border-emerald-100 dark:border-emerald-900/60 space-y-1.5">
+                          <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">
+                            Form Questions & Answers
+                          </span>
+                          <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                            {rawEntries.map(([qKey, qVal]) => (
+                              <div key={qKey} className="text-[11px] bg-slate-50 dark:bg-slate-950/50 p-1.5 rounded-lg border border-slate-100 dark:border-slate-800">
+                                <span className="font-bold text-slate-600 dark:text-slate-400 block">{qKey}:</span>
+                                <span className="text-slate-800 dark:text-slate-200 font-mono">
+                                  {typeof qVal === "object" ? JSON.stringify(qVal) : String(qVal || "N/A")}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-slate-200/80 p-3 bg-slate-50 text-center dark:border-slate-800 dark:bg-slate-900/50">
+                  <p className="text-xs text-slate-400 italic">No Google Form submission recorded yet.</p>
                 </div>
               )}
 
@@ -499,7 +931,7 @@ export default function CandidateProfileModal({
               <form onSubmit={handleAddCommentSubmit} className="space-y-2">
                 <div className="flex items-center gap-1.5 text-[10px] text-slate-500 px-1">
                   <span className="font-bold text-slate-700">Writing as:</span>
-                  <span className="bg-indigo-50 text-indigo-650 px-2 py-0.5 rounded font-black">
+                  <span className="bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded font-black">
                     {currentUser.name} ({currentUser.role})
                   </span>
                 </div>

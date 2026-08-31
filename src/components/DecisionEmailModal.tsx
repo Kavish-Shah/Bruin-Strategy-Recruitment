@@ -4,7 +4,7 @@ import { Applicant } from "./ApplicantCard";
 
 interface DecisionEmailModalProps {
   applicant: Applicant;
-  type: "REJECTION" | "OFFER" | "INTERVIEW";
+  type: "REJECTION" | "OFFER" | "INTERVIEW" | "PERSONALIZED_FEEDBACK";
   onClose: () => void;
   onConfirm: (id: string) => void;
   showToast: (message: string, type: "success" | "error" | "info") => void;
@@ -20,9 +20,33 @@ export default function DecisionEmailModal({
   const [copiedSubject, setCopiedSubject] = useState(false);
   const [copiedBody, setCopiedBody] = useState(false);
 
-  // Generate dynamic feedback line based on candidate's lowest ranked evaluation score
+  // Generate dynamic feedback line based on candidate's lowest ranked evaluation score (averaging dual graders)
   const lowestFeedbackInfo = useMemo(() => {
-    if (!applicant.grades) {
+    let leadership = applicant.grades?.leadership;
+    let problemSolving = applicant.grades?.problemSolving;
+    let communication = applicant.grades?.communication;
+    let essay = applicant.grades?.essay;
+
+    // Aggregate from assignedGraders if available
+    if (applicant.assignedGraders && applicant.assignedGraders.length > 0) {
+      const completedWithGrades = applicant.assignedGraders.filter(
+        (g) => g.status === "completed" && g.grades
+      );
+
+      if (completedWithGrades.length > 0) {
+        const leadSum = completedWithGrades.reduce((acc, g) => acc + (g.grades?.leadership || 0), 0);
+        const solveSum = completedWithGrades.reduce((acc, g) => acc + (g.grades?.problemSolving || 0), 0);
+        const commSum = completedWithGrades.reduce((acc, g) => acc + (g.grades?.communication || 0), 0);
+        const essaySum = completedWithGrades.reduce((acc, g) => acc + (g.grades?.essay || 0), 0);
+
+        leadership = leadSum / completedWithGrades.length;
+        problemSolving = solveSum / completedWithGrades.length;
+        communication = commSum / completedWithGrades.length;
+        essay = essaySum / completedWithGrades.length;
+      }
+    }
+
+    if (leadership === undefined || problemSolving === undefined || communication === undefined) {
       return {
         categoryLabel: "Overall Application Cohort Cutoff",
         lowestScore: null,
@@ -31,12 +55,12 @@ export default function DecisionEmailModal({
       };
     }
 
-    const { leadership, problemSolving, communication, essay } = applicant.grades;
     const scores = [
       {
         key: "problemSolving",
         label: "Quantitative & Analytical Problem Solving",
         score: problemSolving,
+        ratio: problemSolving / 5.0,
         feedback:
           "Our evaluation panel noted that while your background is impressive, we encourage you to further strengthen your quantitative problem-solving and structured analytical case breakdown for future recruitment cycles.",
       },
@@ -44,6 +68,7 @@ export default function DecisionEmailModal({
         key: "leadership",
         label: "Leadership Impact & Project Ownership",
         score: leadership,
+        ratio: leadership / 5.0,
         feedback:
           "While your overall profile shows promise, our review panel recommends focusing on highlighting tangible project ownership, team initiative, and quantifiable leadership impact in future applications.",
       },
@@ -51,20 +76,22 @@ export default function DecisionEmailModal({
         key: "communication",
         label: "Communication & Synthesis",
         score: communication,
+        ratio: communication / 5.0,
         feedback:
           "Our reviewers recommend continuing to refine structured verbal & written communication, executive presentation delivery, and concise synthesis of key insights.",
       },
       {
         key: "essay",
         label: "Written Short Answer Response",
-        score: essay,
+        score: essay || 0,
+        ratio: (essay || 0) / 10.0,
         feedback:
           "While your qualifications are notable, our team felt your short-answer essay response could have provided deeper specific alignment with Bruin Strategy Network's client deliverables and team mission.",
       },
     ];
 
-    // Sort ascending to find lowest score
-    scores.sort((a, b) => (a.score ?? 5) - (b.score ?? 5));
+    // Sort ascending by ratio (relative percentage of max score)
+    scores.sort((a, b) => a.ratio - b.ratio);
     const lowest = scores[0];
 
     return {
@@ -78,18 +105,27 @@ export default function DecisionEmailModal({
   const initialSubject = useMemo(() => {
     if (type === "REJECTION") {
       return `Bruin Strategy Network Recruitment Update - ${applicant.name}`;
+    } else if (type === "PERSONALIZED_FEEDBACK") {
+      return `Bruin Strategy Network - Application Feedback for ${applicant.name}`;
     } else if (type === "OFFER") {
       return `Congratulations! Offer from Bruin Strategy Network - ${applicant.name}`;
     } else {
-      return `Invitation to Round 2 Interview - Bruin Strategy Network (${applicant.name})`;
+      return `Invitation to Coffee Chat / Interview - Bruin Strategy Network (${applicant.name})`;
     }
   }, [applicant, type]);
 
   const [googleFormUrl, setGoogleFormUrl] = useState<string>(() => {
     if (typeof window !== "undefined") {
-      return localStorage.getItem("bsn_interview_form_url") || "https://forms.gle/bruin-strategy-interview-slots";
+      return localStorage.getItem("bsn_interview_form_url") || "https://forms.gle/bruin-strategy-network-interview-slots";
     }
-    return "https://forms.gle/bruin-strategy-interview-slots";
+    return "https://forms.gle/bruin-strategy-network-interview-slots";
+  });
+
+  const [feedbackFormUrl, setFeedbackFormUrl] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("bsn_feedback_form_url") || "https://forms.gle/bsn-feedback-request";
+    }
+    return "https://forms.gle/bsn-feedback-request";
   });
 
   // Pre-filled Email Body Text
@@ -97,12 +133,12 @@ export default function DecisionEmailModal({
     if (type === "REJECTION") {
       return `Dear ${applicant.name},
 
-Thank you so much for taking the time to apply to Bruin Strategy Network for the ${applicant.cohort} track. We truly appreciate the effort and thought you put into your application.
+Thank you so much for taking the time to apply to Bruin Strategy Network. We truly appreciate the effort and thought you put into your application.
 
-After a thorough review by our evaluation panel, we regret to inform you that we are unable to advance your application to the interview stage for this recruitment cycle.
+After a thorough review by our evaluation panel, we regret to inform you that we are unable to advance your application to the interview stage for this recruitment cycle. Due to a record volume of competitive applicants, our selection process was exceptionally selective.
 
-Constructive Feedback from Your Evaluation:
-${lowestFeedbackInfo.feedback}
+If you would like to receive personalized evaluation feedback from our grading committee, please fill out our Feedback Request Form below:
+${feedbackFormUrl}
 
 We know how much time and energy goes into student organization recruitment, and we strongly encourage you to re-apply in our upcoming recruitment cycle. 
 
@@ -111,6 +147,18 @@ We wish you the very best in all your future academic and professional endeavors
 Warm regards,
 Bruin Strategy Network Executive Board
 UCLA | bruinstrategy.org`;
+    } else if (type === "PERSONALIZED_FEEDBACK") {
+      return `Dear ${applicant.name},
+
+Thank you for requesting personalized feedback on your Bruin Strategy Network application for the ${applicant.cohort} track.
+
+Constructive Feedback from Your Evaluation Committee:
+${lowestFeedbackInfo.feedback}
+
+We hope this guidance is helpful for your future growth and upcoming recruitment cycles!
+
+Warm regards,
+Bruin Strategy Network Executive Board`;
     } else if (type === "OFFER") {
       return `Dear ${applicant.name},
 
@@ -127,9 +175,9 @@ Bruin Strategy Network Executive Board`;
     } else {
       return `Dear ${applicant.name},
 
-We are pleased to inform you that you have been selected for Round 2 Interviews with Bruin Strategy Network for the ${applicant.cohort} track!
+We are pleased to inform you that you have been selected for a Coffee Chat with Bruin Strategy Network for the ${applicant.cohort} track!
 
-Please fill out our Interview Slot Preference Form to select your preferred primary interview time slot and your secondary fallback time slot:
+Please fill out our Interview Slot Preference Form to select your preferred primary time slot and your secondary fallback time slot:
 ${googleFormUrl}
 
 We look forward to meeting you soon!
@@ -137,7 +185,7 @@ We look forward to meeting you soon!
 Best regards,
 Bruin Strategy Network Executive Board`;
     }
-  }, [applicant, type, lowestFeedbackInfo, googleFormUrl]);
+  }, [applicant, type, lowestFeedbackInfo, googleFormUrl, feedbackFormUrl]);
 
   const [subjectText, setSubjectText] = useState(initialSubject);
   const [bodyText, setBodyText] = useState(initialBody);
