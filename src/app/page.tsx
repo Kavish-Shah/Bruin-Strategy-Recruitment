@@ -885,7 +885,7 @@ export default function Dashboard() {
             formResponses: app.form_responses,
             shortAnswer: app.short_answer || (app.form_responses && app.form_responses.short_answer),
             major: app.major || (app.form_responses && app.form_responses.major),
-            linkedinUrl: app.linkedin_url || app.linkedinUrl || (app.form_responses && app.form_responses.linkedinUrl),
+            linkedinUrl: app.linkedin_url || app.linkedin || app.linkedinUrl || (app.form_responses && (app.form_responses.linkedinUrl || app.form_responses.linkedin)),
           };
         });
 

@@ -17,6 +17,8 @@ import {
   CheckCircle,
   XCircle,
   Scale,
+  GraduationCap,
+  ExternalLink,
 } from "lucide-react";
 import { Applicant, InterviewComment } from "./ApplicantCard";
 import {
@@ -420,7 +422,7 @@ export default function CandidateProfileModal({
           <div className="w-full md:w-[70%] bg-slate-100 dark:bg-slate-950 flex flex-col overflow-hidden border-b md:border-b-0 md:border-r border-slate-200/80 dark:border-slate-800">
             
             {/* Resume Reader (100% height when showEssay is false) */}
-            <div className={`${showEssay ? "h-[72%]" : "h-full"} flex flex-col overflow-hidden border-b border-slate-200 dark:border-slate-800 transition-all duration-300`}>
+            <div className={`${showEssay ? "h-[58%]" : "h-full"} flex flex-col overflow-hidden border-b border-slate-200 dark:border-slate-800 transition-all duration-300`}>
               <div className="h-11 border-b border-slate-200/80 bg-slate-50 dark:border-slate-800 dark:bg-slate-900 px-4 flex items-center justify-between shrink-0">
                 <span className="text-xs font-semibold text-slate-550 dark:text-slate-400 flex items-center gap-1.5">
                   <FileText className="h-3.5 w-3.5" />
@@ -437,7 +439,7 @@ export default function CandidateProfileModal({
                     }`}
                   >
                     <BookOpen className="h-3.5 w-3.5" />
-                    {showEssay ? "Hide Essay" : "Show Essay Split"}
+                    {showEssay ? "Hide Short Answer" : "View Short Answer Essay"}
                   </button>
 
                   {applicant.resumeUrl && (
@@ -503,7 +505,7 @@ export default function CandidateProfileModal({
 
             {/* Optional Collapsible Essay Box */}
             {showEssay && (
-              <div className="h-[28%] flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 animate-in slide-in-from-bottom-5 duration-200">
+              <div className="h-[42%] flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 animate-in slide-in-from-bottom-5 duration-200">
               <div className="h-11 border-b border-slate-200/80 bg-slate-50 dark:border-slate-800 dark:bg-slate-900 px-4 flex items-center justify-between shrink-0">
                 <span className="text-xs font-semibold text-slate-550 dark:text-slate-400 flex items-center gap-1.5">
                   <BookOpen className="h-3.5 w-3.5 text-indigo-500" />
@@ -517,7 +519,7 @@ export default function CandidateProfileModal({
                 {applicant.shortAnswer ? (
                   <div className="prose prose-sm prose-slate dark:prose-invert max-w-none">
                     <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-1">
-                      Application Question: Tell me about yourself.
+                      Application Question: What is something you are genuinely passionate about, and what have you done to pursue that interest?
                     </h3>
                     <p className="text-[10px] text-slate-400 dark:text-slate-500 italic mt-0 mb-3">
                       Word Count: {applicant.shortAnswer.split(/\s+/).filter(Boolean).length} words
@@ -531,6 +533,65 @@ export default function CandidateProfileModal({
                     No application essay response recorded for this candidate.
                   </div>
                 )}
+
+                {/* Additional Candidate Information: Major & LinkedIn */}
+                {(() => {
+                  const majorText =
+                    applicant.major ||
+                    applicant.formResponses?.major ||
+                    applicant.formResponses?.["Major(s) and Minor(s)"];
+
+                  const rawLinkedin =
+                    applicant.linkedinUrl ||
+                    applicant.formResponses?.linkedin_url ||
+                    applicant.formResponses?.linkedin ||
+                    applicant.formResponses?.["LinkedIn (optional)"];
+
+                  const linkedinHref = rawLinkedin
+                    ? rawLinkedin.startsWith("http")
+                      ? rawLinkedin
+                      : `https://${rawLinkedin}`
+                    : null;
+
+                  if (!majorText && !rawLinkedin) return null;
+
+                  return (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 mt-3 border-t border-slate-200/60 dark:border-slate-800/80">
+                      <div className="p-3 rounded-xl bg-white/80 dark:bg-slate-950/50 border border-slate-200/80 dark:border-slate-800 flex flex-col justify-center shadow-xs">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 flex items-center gap-1.5">
+                          <GraduationCap className="h-3.5 w-3.5 text-indigo-500" />
+                          Major(s) & Minor(s)
+                        </span>
+                        <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1">
+                          {majorText || <span className="italic text-slate-400 font-normal">Not specified</span>}
+                        </p>
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-white/80 dark:bg-slate-950/50 border border-slate-200/80 dark:border-slate-800 flex flex-col justify-center shadow-xs">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 flex items-center gap-1.5">
+                          <ExternalLink className="h-3.5 w-3.5 text-blue-500" />
+                          LinkedIn Profile
+                        </span>
+                        <div className="mt-1">
+                          {linkedinHref ? (
+                            <a
+                              href={linkedinHref}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline truncate max-w-full"
+                              title={linkedinHref}
+                            >
+                              <span className="truncate">{rawLinkedin}</span>
+                              <ExternalLink className="h-3 w-3 shrink-0" />
+                            </a>
+                          ) : (
+                            <span className="text-xs italic text-slate-400 font-normal">Not provided</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
             )}
