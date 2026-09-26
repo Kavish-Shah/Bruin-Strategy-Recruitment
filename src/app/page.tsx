@@ -886,6 +886,16 @@ export default function Dashboard() {
             shortAnswer: app.short_answer || (app.form_responses && app.form_responses.short_answer),
             major: app.major || (app.form_responses && app.form_responses.major),
             linkedinUrl: app.linkedin_url || app.linkedin || app.linkedinUrl || (app.form_responses && (app.form_responses.linkedinUrl || app.form_responses.linkedin)),
+            attendanceCount:
+              typeof app.form_responses?.attendance_count === "number"
+                ? app.form_responses.attendance_count
+                : Array.isArray(app.form_responses?.attendance_events)
+                ? app.form_responses.attendance_events.length
+                : 0,
+            attendanceEvents:
+              app.form_responses?.attendance_events ||
+              app.form_responses?.attendanceEvents ||
+              [],
           };
         });
 

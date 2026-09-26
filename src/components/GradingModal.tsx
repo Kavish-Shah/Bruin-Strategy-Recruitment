@@ -12,6 +12,7 @@ import {
   Layers,
   GraduationCap,
   ExternalLink,
+  CalendarCheck,
 } from "lucide-react";
 import { Applicant } from "./ApplicantCard";
 import {
@@ -277,14 +278,29 @@ export default function GradingModal({
                       : `https://${rawLinkedin}`
                     : null;
 
+                  const attendanceCount =
+                    typeof applicant.attendanceCount === "number"
+                      ? applicant.attendanceCount
+                      : typeof applicant.formResponses?.attendance_count === "number"
+                      ? applicant.formResponses.attendance_count
+                      : Array.isArray(applicant.formResponses?.attendance_events)
+                      ? applicant.formResponses.attendance_events.length
+                      : 0;
+
+                  const attendanceEvents =
+                    applicant.attendanceEvents ||
+                    applicant.formResponses?.attendance_events ||
+                    applicant.formResponses?.attendanceEvents ||
+                    [];
+
                   return (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
                       <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200/80 dark:border-slate-800 flex flex-col justify-center">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 flex items-center gap-1.5">
                           <GraduationCap className="h-3.5 w-3.5 text-indigo-500" />
                           Major(s) & Minor(s)
                         </span>
-                        <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1">
+                        <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1 truncate" title={majorText || undefined}>
                           {majorText || <span className="italic text-slate-400 font-normal">Not specified</span>}
                         </p>
                       </div>
@@ -308,6 +324,39 @@ export default function GradingModal({
                             </a>
                           ) : (
                             <span className="text-xs italic text-slate-400 font-normal">Not provided</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200/80 dark:border-slate-800 flex flex-col justify-center">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 flex items-center gap-1.5">
+                          <CalendarCheck className="h-3.5 w-3.5 text-emerald-500" />
+                          Events Attended
+                        </span>
+                        <div className="mt-1">
+                          {attendanceCount > 0 ? (
+                            <div className="flex flex-col gap-1">
+                              <span className="inline-flex items-center gap-1.5">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/60 font-mono">
+                                  {attendanceCount} {attendanceCount === 1 ? "Event" : "Events"}
+                                </span>
+                              </span>
+                              {attendanceEvents.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-0.5 max-h-16 overflow-y-auto">
+                                  {attendanceEvents.map((evt: any, idx: number) => (
+                                    <span
+                                      key={idx}
+                                      className="text-[10px] font-medium bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-800 truncate max-w-full"
+                                      title={evt.questions ? `Question asked: "${evt.questions}"` : evt.formTitle || undefined}
+                                    >
+                                      {evt.eventName || evt.formTitle || "Event"}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-xs italic text-slate-400 font-normal">0 events recorded</span>
                           )}
                         </div>
                       </div>

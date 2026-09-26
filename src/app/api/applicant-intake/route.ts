@@ -65,6 +65,67 @@ export async function POST(req: Request) {
     // Put everything else in form_responses
     payload.form_responses = body;
 
+    // Check if an applicant already exists with this email or student ID (e.g. from attendance check-ins)
+    let existingApplicant: any = null;
+    if (payload.email) {
+      const { data: existingByEmail } = await supabase
+        .from("applicants")
+        .select("id, form_responses, student_id")
+        .ilike("email", payload.email.trim())
+        .limit(1);
+      if (existingByEmail && existingByEmail.length > 0) {
+        existingApplicant = existingByEmail[0];
+      }
+    }
+
+    if (!existingApplicant && payload.student_id) {
+      const cleanSid = String(payload.student_id).replace(/\D/g, "");
+      if (cleanSid && cleanSid.length >= 6) {
+        const { data: existingBySid } = await supabase
+          .from("applicants")
+          .select("id, form_responses, student_id")
+          .eq("student_id", cleanSid)
+          .limit(1);
+        if (existingBySid && existingBySid.length > 0) {
+          existingApplicant = existingBySid[0];
+        }
+      }
+    }
+
+    if (existingApplicant) {
+      // Merge form responses to preserve any recorded attendance events
+      const prevResponses = existingApplicant.form_responses || {};
+      const mergedResponses = {
+        ...prevResponses,
+        ...body,
+      };
+
+      if (prevResponses.attendance_events && !body.attendance_events) {
+        mergedResponses.attendance_events = prevResponses.attendance_events;
+        mergedResponses.attendance_count = prevResponses.attendance_count;
+        mergedResponses.last_attended_event = prevResponses.last_attended_event;
+        mergedResponses.last_attended_at = prevResponses.last_attended_at;
+      }
+      payload.form_responses = mergedResponses;
+      if (!payload.student_id && existingApplicant.student_id) {
+        payload.student_id = existingApplicant.student_id;
+      }
+
+      const { data: updatedData, error: updateErr } = await supabase
+        .from("applicants")
+        .update(payload)
+        .eq("id", existingApplicant.id)
+        .select();
+
+      if (!updateErr) {
+        return NextResponse.json({
+          success: true,
+          applicant: updatedData?.[0] || payload,
+          updated: true,
+        });
+      }
+    }
+
     const { data, error } = await supabase
       .from("applicants")
       .insert([payload])
