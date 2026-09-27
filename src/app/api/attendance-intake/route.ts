@@ -230,12 +230,14 @@ export async function POST(req: Request) {
         ? [...existingResponses.attendance_events]
         : [];
 
-      // Deduplicate: If same event name submitted on the same day, update instead of duplicating
-      const eventDateStr = submittedAt.slice(0, 10);
+      // Deduplicate: Only merge if submitted within 60 seconds for the exact same event (prevent double-clicks)
       const existingIdx = existingEvents.findIndex((e: any) => {
         const sameName = (e.eventName || "").toLowerCase() === cleanEventName.toLowerCase();
-        const sameDay = (e.submittedAt || "").slice(0, 10) === eventDateStr;
-        return sameName && sameDay;
+        if (!sameName || !e.submittedAt) return false;
+        const prevTime = new Date(e.submittedAt).getTime();
+        const currTime = new Date(submittedAt).getTime();
+        const diffSec = Math.abs(currTime - prevTime) / 1000;
+        return diffSec < 60;
       });
 
       if (existingIdx >= 0) {
