@@ -200,24 +200,6 @@ export default function ApplicantCard({
                 🎓 {applicant.year}
               </span>
             )}
-
-            {Boolean(
-              (applicant.attendanceCount && applicant.attendanceCount > 0) ||
-                (applicant.formResponses?.attendance_count && applicant.formResponses.attendance_count > 0)
-            ) && (() => {
-              const count = applicant.attendanceCount || applicant.formResponses?.attendance_count || 0;
-              const events = applicant.attendanceEvents || applicant.formResponses?.attendance_events || [];
-              const eventNames = events.map((e: any) => e.eventName || e.formTitle || "Event").join(", ");
-              return (
-                <span
-                  className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/40 font-mono inline-flex items-center gap-1 shrink-0"
-                  title={`${count} recruitment event${count > 1 ? "s" : ""} attended${eventNames ? `: ${eventNames}` : ""}`}
-                >
-                  <span>🎟️</span>
-                  <span>{count} {count === 1 ? "Event" : "Events"}</span>
-                </span>
-              );
-            })()}
           </div>
 
           {/* Row 2: Dual Graders */}
