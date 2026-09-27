@@ -24,70 +24,134 @@ export async function POST(req: Request) {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    // Helper for fuzzy key matching across Google Forms payloads
+    const findValue = (candidates: string[]) => {
+      for (const k of candidates) {
+        if (body[k] !== undefined && body[k] !== null && String(body[k]).trim() !== "") {
+          return String(body[k]).trim();
+        }
+      }
+      for (const [key, val] of Object.entries(body)) {
+        if (val && typeof val === "string" && val.trim() !== "") {
+          const lowerKey = key.toLowerCase();
+          if (candidates.some((c) => lowerKey.includes(c.toLowerCase()))) {
+            return val.trim();
+          }
+        }
+      }
+      return null;
+    };
+
     // Normalize payload to match Supabase schema
     const payload: Record<string, any> = {};
-    
-    // Fuzzy matching for linkedin / linkedin_url
-    const linkedinValue = body.linkedin_url || body.linkedin || body.LinkedIn || body.linkedinUrl || body.LinkedInUrl;
+
+    // 1. LinkedIn
+    const linkedinValue = findValue(["linkedin_url", "linkedin", "LinkedIn", "linkedinUrl", "LinkedIn (optional)"]);
     if (linkedinValue) {
       payload.linkedin_url = linkedinValue;
       payload.linkedin = linkedinValue;
     }
 
-    // Map other common fields gracefully
-    const nameValue = body.name || body.Name || body.candidateName || body.candidate_name;
+    // 2. Name
+    const nameValue = findValue(["name", "Name", "candidateName", "candidate_name", "Full Name"]);
     if (nameValue) payload.name = nameValue;
 
-    const emailValue = body.email || body.Email || body.emailAddress || body.email_address;
-    if (emailValue) payload.email = emailValue;
+    // 3. Email
+    const emailValue = findValue(["email", "Email", "emailAddress", "email_address", "Email Address"]);
+    if (emailValue) payload.email = emailValue.trim().toLowerCase();
 
-    const resumeValue = body.resume_url || body.resume || body.Resume || body.resumeUrl;
+    // 4. Resume
+    const resumeValue = findValue(["resume_url", "resume", "Resume", "resumeUrl", "Resume/CV"]);
     if (resumeValue) payload.resume_url = resumeValue;
 
-    const cohortValue = body.cohort || body.Cohort;
+    // 5. Cohort / Track
+    const cohortValue = findValue(["cohort", "Cohort", "track", "Which consulting track are you applying for?"]);
     if (cohortValue) payload.cohort = cohortValue;
 
-    const statusValue = body.status || body.Status || "unassigned";
-    if (statusValue) payload.status = statusValue;
+    // 6. Status
+    const statusValue = findValue(["status", "Status"]) || "unassigned";
+    payload.status = statusValue;
 
-    const shortAnswerValue = body.short_answer || body.shortAnswer || body.ShortAnswer || body.why_bsn;
+    // 7. Short Answer / Essay
+    const shortAnswerValue = findValue(["short_answer", "shortAnswer", "ShortAnswer", "why_bsn", "passionate", "essay"]);
     if (shortAnswerValue) payload.short_answer = shortAnswerValue;
-    
-    const yearValue = body.year || body.Year;
+
+    // 8. Year
+    const yearValue = findValue(["year", "Year"]);
     if (yearValue) payload.Year = yearValue;
 
-    const majorValue = body.major || body.Major;
+    // 9. Major
+    const majorValue = findValue(["major", "Major", "Major(s) and Minor(s)", "majors"]);
     if (majorValue) payload.major = majorValue;
-    
-    const studentIdValue = body.student_id || body.studentId || body.StudentId;
+
+    // 10. Student ID
+    const studentIdValue = findValue(["student_id", "studentId", "StudentId", "Student ID", "Student ID #", "uid", "sid"]);
     if (studentIdValue) payload.student_id = studentIdValue;
 
     // Put everything else in form_responses
     payload.form_responses = body;
 
-    // Check if an applicant already exists with this email or student ID (e.g. from attendance check-ins)
-    let existingApplicant: any = null;
-    if (payload.email) {
-      const { data: existingByEmail } = await supabase
-        .from("applicants")
-        .select("id, form_responses, student_id")
-        .ilike("email", payload.email.trim())
-        .limit(1);
-      if (existingByEmail && existingByEmail.length > 0) {
-        existingApplicant = existingByEmail[0];
-      }
-    }
+    // 4-Tier Matching to retroactively link existing check-in records:
+    const cleanSid = payload.student_id ? String(payload.student_id).replace(/\D/g, "") : "";
+    const cleanSubmittedEmail = payload.email ? payload.email.trim().toLowerCase() : "";
+    const submittedUsername = cleanSubmittedEmail ? cleanSubmittedEmail.split("@")[0].trim() : "";
+    const cleanSubmittedName = payload.name ? payload.name.toLowerCase().replace(/[^a-z]/g, "") : "";
 
-    if (!existingApplicant && payload.student_id) {
-      const cleanSid = String(payload.student_id).replace(/\D/g, "");
-      if (cleanSid && cleanSid.length >= 6) {
-        const { data: existingBySid } = await supabase
-          .from("applicants")
-          .select("id, form_responses, student_id")
-          .eq("student_id", cleanSid)
-          .limit(1);
-        if (existingBySid && existingBySid.length > 0) {
-          existingApplicant = existingBySid[0];
+    // Fetch existing candidates to perform 4-tier precision matching
+    const { data: allExisting } = await supabase
+      .from("applicants")
+      .select("id, name, email, student_id, form_responses");
+
+    let existingApplicant: any = null;
+
+    if (allExisting && allExisting.length > 0) {
+      // Tier 1: Cleaned digits Student ID match
+      if (!existingApplicant && cleanSid && cleanSid.length >= 6) {
+        for (const a of allExisting) {
+          const dbCleanId = (a.student_id || "").replace(/\D/g, "");
+          const fId = a.form_responses?.["Student ID"] || a.form_responses?.student_id || a.form_responses?.studentId;
+          const cleanFId = fId ? String(fId).replace(/\D/g, "") : "";
+          if (
+            (dbCleanId && (dbCleanId === cleanSid || dbCleanId.startsWith(cleanSid) || cleanSid.startsWith(dbCleanId))) ||
+            (cleanFId && (cleanFId === cleanSid || cleanFId.startsWith(cleanSid)))
+          ) {
+            existingApplicant = a;
+            break;
+          }
+        }
+      }
+
+      // Tier 2: Exact Email match
+      if (!existingApplicant && cleanSubmittedEmail) {
+        for (const a of allExisting) {
+          const dbEmail = (a.email || "").toLowerCase().trim();
+          if (dbEmail && dbEmail === cleanSubmittedEmail) {
+            existingApplicant = a;
+            break;
+          }
+        }
+      }
+
+      // Tier 3: Email Username match (e.g. kvshah@g.ucla.edu == kvshah@ucla.edu)
+      if (!existingApplicant && submittedUsername && submittedUsername.length >= 3) {
+        for (const a of allExisting) {
+          const dbEmail = (a.email || "").toLowerCase().trim();
+          const dbUser = dbEmail ? dbEmail.split("@")[0].trim() : "";
+          if (dbUser && dbUser === submittedUsername) {
+            existingApplicant = a;
+            break;
+          }
+        }
+      }
+
+      // Tier 4: Cleaned Full Name match
+      if (!existingApplicant && cleanSubmittedName && cleanSubmittedName.length >= 4) {
+        for (const a of allExisting) {
+          const dbName = (a.name || "").toLowerCase().trim().replace(/[^a-z]/g, "");
+          if (dbName && dbName === cleanSubmittedName) {
+            existingApplicant = a;
+            break;
+          }
         }
       }
     }
