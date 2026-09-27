@@ -14,6 +14,13 @@ export async function OPTIONS() {
   });
 }
 
+export async function GET() {
+  return NextResponse.json(
+    { status: "ok", message: "Attendance intake API is active and ready for POST submissions." },
+    { status: 200, headers: corsHeaders }
+  );
+}
+
 export async function POST(req: Request) {
   try {
     let body: any = {};
