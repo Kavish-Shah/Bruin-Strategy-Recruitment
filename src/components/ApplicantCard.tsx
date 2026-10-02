@@ -88,10 +88,12 @@ export interface Applicant {
 interface ApplicantCardProps {
   applicant: Applicant;
   isAdmin: boolean;
+  currentUser?: { name: string; email: string; role: string; id?: string };
   isCalibratedView?: boolean;
   graderCalibrationOffsets?: Record<string, number>;
   customRubrics?: Record<RubricKey, RubricConfig>;
   onView: (id: string) => void;
+  onGrade?: (id: string) => void;
   onAssign?: (id: string) => void;
   onUnassign?: (id: string) => void;
   onAssignSlot?: (applicantId: string, slotIndex: 0 | 1) => void;
@@ -110,10 +112,12 @@ interface ApplicantCardProps {
 export default function ApplicantCard({
   applicant,
   isAdmin,
+  currentUser,
   isCalibratedView = false,
   graderCalibrationOffsets = {},
   customRubrics,
   onView,
+  onGrade,
   onAssign,
   onUnassign,
   onAssignSlot,
@@ -138,6 +142,18 @@ export default function ApplicantCard({
   const graders = applicant.assignedGraders || [];
   const grader1 = graders[0] || (applicant.assignedGraderName ? { graderId: applicant.assignedGraderId || "", graderName: applicant.assignedGraderName, score: applicant.score, status: "completed" as const } : null);
   const grader2 = graders[1] || null;
+
+  const myAssignedSlot = currentUser
+    ? (applicant.assignedGraders || []).find(
+        (ag) =>
+          (currentUser.id && ag.graderId === currentUser.id) ||
+          (currentUser.name && ag.graderName.toLowerCase() === currentUser.name.toLowerCase())
+      )
+    : null;
+
+  const hasGradedByMe = Boolean(
+    myAssignedSlot && (myAssignedSlot.status === "completed" || myAssignedSlot.score !== undefined)
+  );
 
   const getGraderCalibratedScore = (g: any) => {
     if (!g || g.score === undefined) return undefined;
@@ -336,7 +352,24 @@ export default function ApplicantCard({
 
           {/* Action Buttons */}
           <div className="flex items-center gap-1.5 flex-wrap">
+            {onGrade && (
+              <button
+                type="button"
+                onClick={() => onGrade(applicant.id)}
+                className={`flex h-8 items-center gap-1.5 rounded-xl px-3 text-xs font-bold transition-all shadow-xs cursor-pointer ${
+                  hasGradedByMe
+                    ? "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900"
+                    : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/20"
+                }`}
+                title="Open Rubric Scoring & Resume"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                {hasGradedByMe ? "Edit Grade" : "Grade"}
+              </button>
+            )}
+
             <button
+              type="button"
               onClick={() => onView(applicant.id)}
               className="flex h-8 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 transition-colors cursor-pointer"
             >

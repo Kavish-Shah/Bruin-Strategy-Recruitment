@@ -36,6 +36,7 @@ interface GradingModalProps {
     notes: string
   ) => void;
   customRubrics?: Record<RubricKey, RubricConfig>;
+  currentUser?: { name: string; email: string; role: string; id?: string };
 }
 
 function getDriveEmbedUrl(url?: string): string | null {
@@ -65,6 +66,7 @@ export default function GradingModal({
   onClose,
   onSubmitGrade,
   customRubrics,
+  currentUser,
 }: GradingModalProps) {
   const resolvedCustomRubrics = customRubrics || (() => {
     try {
@@ -81,10 +83,21 @@ export default function GradingModal({
 
   const criteriaList = getRubricCriteriaList(activeRubric, rKey);
 
+  // Find the current reviewer's assignment info if they already submitted or have notes
+  const myAssignment = (applicant.assignedGraders || []).find(
+    (g) =>
+      (currentUser?.id && g.graderId === currentUser.id) ||
+      (currentUser?.name && g.graderName.toLowerCase() === currentUser.name.toLowerCase())
+  );
+
   const [scores, setScores] = useState<Record<string, number>>(() => {
     const initial: Record<string, number> = {};
+    const existingGrades =
+      myAssignment?.grades ||
+      (myAssignment?.score !== undefined ? undefined : applicant.grades);
+
     criteriaList.forEach((c) => {
-      const existing = applicant.grades ? (applicant.grades as any)[c.id] : undefined;
+      const existing = existingGrades ? (existingGrades as any)[c.id] : undefined;
       const bms = getNormalizedBenchmarks(c).sort((a, b) => a.point - b.point);
       if (existing !== undefined) {
         initial[c.id] = Number(existing);
@@ -98,7 +111,9 @@ export default function GradingModal({
     return initial;
   });
 
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes] = useState<string>(() => {
+    return myAssignment?.notes || "";
+  });
   const [zoom, setZoom] = useState(100);
   const [showEssay, setShowEssay] = useState(false);
   const [activeBenchmarkTab, setActiveBenchmarkTab] = useState<Record<string, string>>({});

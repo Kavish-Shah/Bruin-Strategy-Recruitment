@@ -47,6 +47,7 @@ interface CandidateProfileModalProps {
   onSendReject?: (id: string) => void;
   onUndoRejection?: (id: string) => void;
   onUpdateScheduledTimes?: (id: string, primaryTime: string | null, fallbackTime: string | null) => void;
+  onOpenGrading?: (applicant: Applicant) => void;
 }
 
 function getDriveEmbedUrl(url?: string): string | null {
@@ -204,6 +205,7 @@ export default function CandidateProfileModal({
   onSendReject,
   onUndoRejection,
   onUpdateScheduledTimes,
+  onOpenGrading,
 }: CandidateProfileModalProps) {
   const [commentText, setCommentText] = useState("");
   const [zoom, setZoom] = useState(100);
@@ -303,6 +305,18 @@ export default function CandidateProfileModal({
           </div>
           
           <div className="flex items-center gap-2">
+            {onOpenGrading && (
+              <button
+                type="button"
+                onClick={() => onOpenGrading(applicant)}
+                className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3.5 py-1.5 rounded-xl transition-all shadow-sm cursor-pointer mr-2"
+                title="Open Rubric Scoring & Resume"
+              >
+                <FileText className="h-4 w-4" />
+                Grade Application
+              </button>
+            )}
+
             {currentUser.role === "ADMIN" && applicant.status === "rejected" && onUndoRejection && (
               <button
                 type="button"

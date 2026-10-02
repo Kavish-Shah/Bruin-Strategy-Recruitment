@@ -1957,15 +1957,29 @@ export default function Dashboard() {
       graderCounts[g.id] = 0;
     });
 
+    // Track co-grading pair frequencies to ensure maximum diversity across reviewers
+    const pairCounts: Record<string, number> = {};
+    const getPairKey = (id1: string, id2: string) => [id1, id2].sort().join("-");
+
+    const isHealthTrack = selectedCohort.toLowerCase().includes("health");
+
+    // Pre-seed grader counts and pair frequencies ONLY with completed evaluations so that
+    // any work already done by a grader is locked and credited toward their overall load.
     applicants.forEach((app) => {
-      if (app.assignedGraders && app.assignedGraders.length > 0) {
-        app.assignedGraders.forEach((ag) => {
-          if (graderCounts[ag.graderId] !== undefined) {
-            graderCounts[ag.graderId]++;
-          }
-        });
-      } else if (app.assignedGraderId && graderCounts[app.assignedGraderId] !== undefined) {
-        graderCounts[app.assignedGraderId]++;
+      const appIsHealth = (app.cohort || "").toLowerCase().includes("health");
+      if (isHealthTrack !== appIsHealth) return;
+
+      const completed = (app.assignedGraders || []).filter(
+        (ag) => ag.status === "completed" || ag.score !== undefined
+      );
+      completed.forEach((ag) => {
+        if (graderCounts[ag.graderId] !== undefined) {
+          graderCounts[ag.graderId]++;
+        }
+      });
+      if (completed.length >= 2) {
+        const k = getPairKey(completed[0].graderId, completed[1].graderId);
+        pairCounts[k] = (pairCounts[k] || 0) + 1;
       }
     });
 
@@ -1973,11 +1987,13 @@ export default function Dashboard() {
     const newAssignmentsToInsert: any[] = [];
 
     const nextApplicants = applicants.map((app) => {
-      const isHealthTrack = selectedCohort.toLowerCase().includes("health");
       const appIsHealth = (app.cohort || "").toLowerCase().includes("health");
       if (isHealthTrack !== appIsHealth) return app;
 
-      const currentGraders = app.assignedGraders ? [...app.assignedGraders] : [];
+      // Lock in any grader who has ALREADY completed an evaluation (preserves their score & notes)
+      const currentGraders = (app.assignedGraders || []).filter(
+        (ag) => ag.status === "completed" || ag.score !== undefined
+      );
       if (currentGraders.length >= 2) return app;
 
       const appPool = getApplicantRubricKey(app);
@@ -1997,7 +2013,29 @@ export default function Dashboard() {
 
         if (availableGraders.length === 0) break;
 
-        availableGraders.sort((a, b) => (graderCounts[a.id] || 0) - (graderCounts[b.id] || 0));
+        // When pairing with Grader 1, prioritize reviewers with whom Grader 1 has co-graded the least,
+        // tie-breaking by lowest overall assignment load.
+        if (currentGraders.length === 1) {
+          const firstGraderId = currentGraders[0].graderId;
+          availableGraders.sort((a, b) => {
+            const pairCountA = pairCounts[getPairKey(firstGraderId, a.id)] || 0;
+            const pairCountB = pairCounts[getPairKey(firstGraderId, b.id)] || 0;
+            if (pairCountA !== pairCountB) return pairCountA - pairCountB;
+            const loadA = graderCounts[a.id] || 0;
+            const loadB = graderCounts[b.id] || 0;
+            if (loadA !== loadB) return loadA - loadB;
+            return Math.random() - 0.5;
+          });
+        } else {
+          // Slot 1: Pick reviewer with lowest overall workload
+          availableGraders.sort((a, b) => {
+            const loadA = graderCounts[a.id] || 0;
+            const loadB = graderCounts[b.id] || 0;
+            if (loadA !== loadB) return loadA - loadB;
+            return Math.random() - 0.5;
+          });
+        }
+
         const chosenGrader = availableGraders[0];
 
         currentGraders.push({
@@ -2016,6 +2054,12 @@ export default function Dashboard() {
         });
       }
 
+      // Record the pair formed to ensure future applicants get diverse pairings
+      if (currentGraders.length >= 2) {
+        const pKey = getPairKey(currentGraders[0].graderId, currentGraders[1].graderId);
+        pairCounts[pKey] = (pairCounts[pKey] || 0) + 1;
+      }
+
       const primaryGrader = currentGraders[0];
       const newStatus = currentGraders.length > 0 ? (app.status === "unassigned" ? "assigned" : app.status) : app.status;
 
@@ -2032,15 +2076,32 @@ export default function Dashboard() {
 
     if (hasSupabaseKeys && newAssignmentsToInsert.length > 0) {
       try {
-        const { error: upsertErr } = await supabase.from("assignments").upsert(newAssignmentsToInsert, {
-          onConflict: "applicant_id,grader_id",
-        });
+        const targetCohortAppIds = applicants
+          .filter((app) => isHealthTrack === (app.cohort || "").toLowerCase().includes("health"))
+          .map((app) => app.id);
 
-        if (upsertErr) {
-          // Fallback if unique constraint on (applicant_id, grader_id) is missing in DB
-          await supabase.from("assignments").insert(newAssignmentsToInsert);
+        // 1. Delete ONLY pending/un-graded assignments for this cohort.
+        // Completed evaluations (status: "completed") and their scores/notes are 100% preserved!
+        const { error: delErr } = await supabase
+          .from("assignments")
+          .delete()
+          .in("applicant_id", targetCohortAppIds)
+          .eq("status", "assigned");
+
+        if (delErr) {
+          console.error("Error clearing old pending assignments:", delErr);
         }
 
+        // 2. Insert new balanced, diverse assignments in safe batches of 200
+        for (let i = 0; i < newAssignmentsToInsert.length; i += 200) {
+          const chunk = newAssignmentsToInsert.slice(i, i + 200);
+          const { error: insErr } = await supabase.from("assignments").insert(chunk);
+          if (insErr) {
+            console.error("Error inserting round robin chunk:", insErr);
+          }
+        }
+
+        // 3. Update status to assigned for previously unassigned candidates
         const assignedIds = Array.from(new Set(newAssignmentsToInsert.map((a) => a.applicant_id)));
         await supabase
           .from("applicants")
@@ -2417,9 +2478,20 @@ export default function Dashboard() {
           if (fallbackError) throw fallbackError;
         }
 
+        // Check if all assigned graders for this applicant have now completed their evaluation
+        const { data: allAssignments } = await supabase
+          .from("assignments")
+          .select("id, status")
+          .eq("applicant_id", applicantId);
+
+        const totalAssignments = allAssignments?.length || 2;
+        const completedAssignmentsCount = allAssignments?.filter((a: any) => a.status === "completed").length || 1;
+        const isFullyGraded = completedAssignmentsCount >= totalAssignments;
+        const nextStatus = isFullyGraded ? "completed" : "in_progress";
+
         const { error: appError } = await supabase
           .from("applicants")
-          .update({ status: "completed" })
+          .update({ status: nextStatus })
           .eq("id", applicantId);
 
         if (appError) throw appError;
@@ -2442,13 +2514,14 @@ export default function Dashboard() {
         });
 
         const completedGraders = updatedGraders.filter((g) => g.status === "completed" && g.score !== undefined);
+        const isFullyGraded = completedGraders.length >= (updatedGraders.length > 0 ? updatedGraders.length : 2);
         const overallScore = completedGraders.length > 0
           ? parseFloat((completedGraders.reduce((acc, curr) => acc + (curr.score || 0), 0) / completedGraders.length).toFixed(1))
           : totalScore;
 
         return {
           ...app,
-          status: "completed",
+          status: isFullyGraded ? "completed" : "in_progress",
           score: overallScore,
           grades: grades,
           notes: notes,
@@ -3904,21 +3977,19 @@ export default function Dashboard() {
                           <ApplicantCard
                             applicant={app}
                             isAdmin={userRole === "ADMIN"}
+                            currentUser={currentUser}
                             isCalibratedView={isCalibratedView}
                             graderCalibrationOffsets={graderCalibrationOffsets}
+                            onGrade={(id) => {
+                              const found = applicants.find((a) => a.id === id);
+                              if (found) {
+                                setGradingApplicant(found);
+                              }
+                            }}
                             onView={(id) => {
                               const found = applicants.find((a) => a.id === id);
                               if (found) {
-                                // If already rated, open Profile modal. Otherwise open Rubric Grading modal.
-                                if (
-                                  ["completed", "interview", "group_interview", "offered", "rejected"].includes(
-                                    found.status
-                                  )
-                                ) {
-                                  setSelectedApplicantForProfile(found);
-                                } else {
-                                  setGradingApplicant(found);
-                                }
+                                setSelectedApplicantForProfile(found);
                               }
                             }}
                             onAssignSlot={(id, slotIdx) => setAssigningSlotInfo({ applicantId: id, slotIndex: slotIdx })}
@@ -5531,6 +5602,7 @@ Bruin Strategy Network Board`}
         <GradingModal
           applicant={gradingApplicant}
           customRubrics={rubricsState}
+          currentUser={currentUser}
           onClose={() => setGradingApplicant(null)}
           onSubmitGrade={handleSubmitEvaluation}
         />
@@ -5545,6 +5617,10 @@ Bruin Strategy Network Board`}
           isCalibratedView={isCalibratedView}
           graderCalibrationOffsets={graderCalibrationOffsets}
           onClose={() => setSelectedApplicantForProfile(null)}
+          onOpenGrading={(app) => {
+            setSelectedApplicantForProfile(null);
+            setGradingApplicant(app);
+          }}
           onAddComment={handleAddInterviewComment}
           onSendInterview={(id) => {
             handleSendInterview(id);
