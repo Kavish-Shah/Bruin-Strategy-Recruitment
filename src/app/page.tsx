@@ -1061,13 +1061,15 @@ export default function Dashboard() {
   const gradersList = useMemo<Grader[]>(() => {
     if (hasSupabaseKeys) {
       if (dbProfiles && dbProfiles.length > 0) {
-        return dbProfiles.map((p) => ({
-          id: p.id,
-          name: p.name,
-          email: p.email || `${p.name.toLowerCase().replace(/\s+/g, ".")}@bruinstrategy.org`,
-          role: (p.role === "ADMIN" ? "ADMIN" : "GRADER") as "ADMIN" | "GRADER",
-          avatar: "/bruinstrategylogo.jpeg",
-        }));
+        return dbProfiles
+          .filter((p) => p.role === "GRADER")
+          .map((p) => ({
+            id: p.id,
+            name: p.name,
+            email: p.email || `${p.name.toLowerCase().replace(/\s+/g, ".")}@bruinstrategy.org`,
+            role: "GRADER" as const,
+            avatar: "/bruinstrategylogo.jpeg",
+          }));
       }
       return [];
     }
@@ -1943,7 +1945,8 @@ export default function Dashboard() {
       return;
     }
 
-    const activeGraders = gradersList;
+    // Strictly distribute only to accounts with GRADER role (excludes ADMIN)
+    const activeGraders = gradersList.filter((g) => g.role === "GRADER");
     if (activeGraders.length === 0) {
       showToast("No active graders available.", "error");
       return;
@@ -2437,10 +2440,16 @@ export default function Dashboard() {
           }
           return g;
         });
+
+        const completedGraders = updatedGraders.filter((g) => g.status === "completed" && g.score !== undefined);
+        const overallScore = completedGraders.length > 0
+          ? parseFloat((completedGraders.reduce((acc, curr) => acc + (curr.score || 0), 0) / completedGraders.length).toFixed(1))
+          : totalScore;
+
         return {
           ...app,
           status: "completed",
-          score: totalScore,
+          score: overallScore,
           grades: grades,
           notes: notes,
           assignedGraders: updatedGraders.length > 0 ? updatedGraders : [
@@ -3258,7 +3267,9 @@ export default function Dashboard() {
 
   // Compute grading statistics per grader dynamically (including average scores & expanded collapsibles)
   const graderAssignments = useMemo(() => {
-    return gradersList.map((grader) => {
+    return gradersList
+      .filter((grader) => grader.role === "GRADER")
+      .map((grader) => {
       const assignedApps = applicants.filter((a) => {
         const matchesList = a.assignedGraders && a.assignedGraders.some(
           (ag) => ag.graderId === grader.id || ag.graderName.toLowerCase() === grader.name.toLowerCase()
@@ -3938,8 +3949,8 @@ export default function Dashboard() {
                                   ✕
                                 </button>
                               </div>
-                              <div className="space-y-1 max-h-48 overflow-y-auto">
-                                {gradersList.map((grader) => (
+                                <div className="space-y-1 max-h-48 overflow-y-auto">
+                                  {gradersList.filter((g) => g.role === "GRADER").map((grader) => (
                                   <button
                                     key={grader.id}
                                     onClick={() =>
