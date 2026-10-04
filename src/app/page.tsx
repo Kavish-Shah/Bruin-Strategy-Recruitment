@@ -637,6 +637,23 @@ export default function Dashboard() {
           },
           () => {}
         );
+
+      supabase
+        .from("recruitment_settings")
+        .select("setting_value")
+        .eq("setting_key", "group_interview_slots")
+        .single()
+        .then(
+          ({ data }) => {
+            if (data && data.setting_value && Array.isArray(data.setting_value) && data.setting_value.length > 0) {
+              setGroupSlots(data.setting_value);
+              try {
+                localStorage.setItem("bsn_group_interview_slots", JSON.stringify(data.setting_value));
+              } catch (_) {}
+            }
+          },
+          () => {}
+        );
     }
   }, [hasSupabaseKeys]);
 
@@ -865,14 +882,17 @@ export default function Dashboard() {
           let resolvedPrimaryTime: string | null = null;
           let resolvedFallbackTime: string | null = null;
 
+          const dbScheduled = cleanTimeStr(app.scheduled_time);
+          const dbFallback = cleanTimeStr(app.fallback_time);
+
           if (isGroupInterviewStage) {
             const { scheduledTime: groupPrimary, fallbackTime: groupFallback } = getGroupInterviewTimes(app.form_responses);
-            resolvedPrimaryTime = groupPrimary || (app.status === "group_interview" ? cleanTimeStr(app.scheduled_time) : null);
-            resolvedFallbackTime = groupFallback || (app.status === "group_interview" ? cleanTimeStr(app.fallback_time) : null);
+            resolvedPrimaryTime = dbScheduled || groupPrimary || null;
+            resolvedFallbackTime = dbFallback || groupFallback || null;
           } else {
             const { scheduledTime: coffeePrimary, fallbackTime: coffeeFallback } = getCoffeeChatTimes(app.form_responses);
-            resolvedPrimaryTime = coffeePrimary || (app.status === "interview" ? cleanTimeStr(app.scheduled_time) : null);
-            resolvedFallbackTime = coffeeFallback || (app.status === "interview" ? cleanTimeStr(app.fallback_time) : null);
+            resolvedPrimaryTime = dbScheduled || coffeePrimary || null;
+            resolvedFallbackTime = dbFallback || coffeeFallback || null;
           }
 
           const finalScheduledTime = cleanTimeStr(resolvedPrimaryTime);
@@ -918,6 +938,15 @@ export default function Dashboard() {
 
         // Update local React state strictly with DB entries from Supabase
         setApplicants(mapped);
+
+        // Populate table assignments from Supabase so all admins see identical table arrangements
+        const initialTables: Record<string, number> = {};
+        mapped.forEach((app) => {
+          if (app.tableNumber) {
+            initialTables[app.id] = app.tableNumber;
+          }
+        });
+        setTableAssignments((prev) => ({ ...initialTables, ...prev }));
 
       } catch (err: any) {
         console.warn("Notice fetching applicants from Supabase:", err?.message || err);
@@ -1521,6 +1550,7 @@ export default function Dashboard() {
   };
 
   const handleAssignCandidateToGroupSlot = (candidateId: string, targetSlotId: string | null) => {
+    let assignedTimeSlot: string | null = null;
     const updated = groupSlots.map((slot) => {
       const filteredCandidates = slot.assignedCandidateIds.filter((id) => id !== candidateId);
       if (slot.id === targetSlotId) {
@@ -1528,11 +1558,15 @@ export default function Dashboard() {
           showToast("Session is already at maximum capacity!", "error");
           return slot;
         }
+        assignedTimeSlot = slot.timeSlot;
         return { ...slot, assignedCandidateIds: [...filteredCandidates, candidateId] };
       }
       return { ...slot, assignedCandidateIds: filteredCandidates };
     });
     saveGroupSlots(updated);
+    if (assignedTimeSlot || targetSlotId === null) {
+      handleRescheduleApplicant(candidateId, assignedTimeSlot);
+    }
     showToast("Updated candidate room assignment!", "success");
   };
 
@@ -4417,8 +4451,8 @@ export default function Dashboard() {
                 const tables = Array.from({ length: 8 }, (_, tableIdx) => {
                   const tableNumber = tableIdx + 1;
                   const tableCandidates = slotApps.filter((app, idx) => {
-                    const assignedTable = tableAssignments[app.id];
-                    if (assignedTable !== undefined) {
+                    const assignedTable = tableAssignments[app.id] ?? app.tableNumber;
+                    if (assignedTable !== undefined && assignedTable !== null) {
                       return assignedTable === tableNumber;
                     }
                     return (idx % 8) + 1 === tableNumber;
