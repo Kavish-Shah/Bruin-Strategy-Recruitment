@@ -201,6 +201,11 @@ export default function ApplicantCard({
         <div className="flex flex-col gap-2 flex-1 min-w-0">
           {/* Row 1: Name, ID, Year, Cohort */}
           <div className="flex flex-wrap items-center gap-2">
+            {applicant.rank && (
+              <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/40 font-mono font-extrabold text-xs shrink-0">
+                #{applicant.rank}
+              </span>
+            )}
             <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">
               {applicant.name}
             </h3>

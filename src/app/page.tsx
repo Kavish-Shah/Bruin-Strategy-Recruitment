@@ -3457,6 +3457,49 @@ export default function Dashboard() {
     });
   }, [gradersList, applicants, graderCalibrationOffsets]);
 
+  // Dynamically compute rankings across the active pool so numbers (1, 2, 3...) stay consistent even when searching
+  const cohortRankMap = useMemo(() => {
+    const isHealthTrack = selectedCohort.toLowerCase().includes("health");
+    const trackApplicants = applicants.filter((app) => {
+      const appIsHealth = (app.cohort || "").toLowerCase().includes("health");
+      if (isHealthTrack !== appIsHealth) return false;
+
+      if (yearFilter !== "all") {
+        const isFreshman =
+          (app.year && app.year.toLowerCase().includes("freshman")) ||
+          (app.cohort && app.cohort.toLowerCase().includes("freshman"));
+        if (yearFilter === "freshman" && !isFreshman) return false;
+        if (yearFilter === "upperclassman" && isFreshman) return false;
+      }
+
+      return true;
+    });
+
+    const sorted = [...trackApplicants].sort((a, b) => {
+      const scoreA = getApplicantCalibratedScore(a, isCalibratedView, graderCalibrationOffsets).effectiveScore;
+      const scoreB = getApplicantCalibratedScore(b, isCalibratedView, graderCalibrationOffsets).effectiveScore;
+
+      if (scoreA !== undefined && scoreB !== undefined) {
+        return scoreB - scoreA;
+      }
+      if (scoreA !== undefined) return -1;
+      if (scoreB !== undefined) return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    const rankMap: Record<string, number> = {};
+    let currentRank = 1;
+
+    sorted.forEach((app) => {
+      const effScore = getApplicantCalibratedScore(app, isCalibratedView, graderCalibrationOffsets).effectiveScore;
+      if (effScore !== undefined && effScore > 0) {
+        rankMap[app.id] = currentRank++;
+      }
+    });
+
+    return rankMap;
+  }, [applicants, selectedCohort, yearFilter, isCalibratedView, graderCalibrationOffsets]);
+
   // Filter and search applicants
   const filteredApplicants = useMemo(() => {
     return applicants
@@ -3502,6 +3545,10 @@ export default function Dashboard() {
 
         return true;
       })
+      .map((app) => ({
+        ...app,
+        rank: cohortRankMap[app.id] ?? app.rank,
+      }))
       .sort((a, b) => {
         // Highest score (lowest rank #1) first
         if (a.rank !== undefined && b.rank !== undefined) {
@@ -3532,6 +3579,7 @@ export default function Dashboard() {
     currentUser,
     isCalibratedView,
     graderCalibrationOffsets,
+    cohortRankMap,
   ]);
 
   // LOADING STATE
