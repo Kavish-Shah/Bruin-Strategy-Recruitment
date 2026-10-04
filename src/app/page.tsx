@@ -620,6 +620,23 @@ export default function Dashboard() {
           },
           () => {}
         );
+
+      supabase
+        .from("recruitment_settings")
+        .select("setting_value")
+        .eq("setting_key", "grader_calibration_offsets")
+        .single()
+        .then(
+          ({ data }) => {
+            if (data && data.setting_value && typeof data.setting_value === "object") {
+              setGraderCalibrationOffsets(data.setting_value);
+              try {
+                localStorage.setItem("bsn_grader_calibration_offsets", JSON.stringify(data.setting_value));
+              } catch (_) {}
+            }
+          },
+          () => {}
+        );
     }
   }, [hasSupabaseKeys]);
 
@@ -2120,7 +2137,7 @@ export default function Dashboard() {
   };
 
   // Statistical Grader Calibration: One-Click Auto-Equalization (After-the-fact)
-  const handleAutoEqualizeGraders = () => {
+  const handleAutoEqualizeGraders = async () => {
     // 1. Find all completed evaluations across the pool
     const completedApps = applicants.filter(
       (a) => ["completed", "interview", "group_interview", "offered", "rejected"].includes(a.status) && a.score !== undefined
@@ -2139,7 +2156,7 @@ export default function Dashboard() {
     const newOffsets: Record<string, number> = {};
     let equalizedCount = 0;
 
-    gradersList.forEach((grader) => {
+    gradersList.filter((g) => g.role === "GRADER").forEach((grader) => {
       const graderApps = applicants.filter((a) => {
         const matchesList = a.assignedGraders && a.assignedGraders.some(
           (ag) => (ag.graderId === grader.id || ag.graderName.toLowerCase() === grader.name.toLowerCase()) && ag.status === "completed" && ag.score !== undefined
@@ -2177,28 +2194,54 @@ export default function Dashboard() {
       localStorage.setItem("bsn_grader_calibration_offsets", JSON.stringify(newOffsets));
     }
 
+    if (hasSupabaseKeys) {
+      try {
+        await supabase.from("recruitment_settings").upsert({
+          setting_key: "grader_calibration_offsets",
+          setting_value: newOffsets,
+        });
+      } catch (err) {
+        console.error("Error saving calibration offsets to Supabase:", err);
+      }
+    }
+
     showToast(
       `⚡ Auto-equalized ${equalizedCount} reviewers to cohort baseline (${overallMean.toFixed(1)} pts)!`,
       "success"
     );
   };
 
-  const handleResetCalibration = () => {
+  const handleResetCalibration = async () => {
     setGraderCalibrationOffsets({});
     if (typeof window !== "undefined") {
       localStorage.removeItem("bsn_grader_calibration_offsets");
     }
+    if (hasSupabaseKeys) {
+      try {
+        await supabase.from("recruitment_settings").upsert({
+          setting_key: "grader_calibration_offsets",
+          setting_value: {},
+        });
+      } catch (_) {}
+    }
     showToast("Reset all equalizations to raw scores.", "info");
   };
 
-  const handleUpdateGraderOffset = (graderId: string, graderName: string, delta: number) => {
-    setGraderCalibrationOffsets((prev) => {
-      const updated = { ...prev, [graderId]: delta, [graderName]: delta };
-      if (typeof window !== "undefined") {
-        localStorage.setItem("bsn_grader_calibration_offsets", JSON.stringify(updated));
-      }
-      return updated;
-    });
+  const handleUpdateGraderOffset = async (graderId: string, graderName: string, delta: number) => {
+    const rounded = parseFloat(delta.toFixed(1));
+    const updated = { ...graderCalibrationOffsets, [graderId]: rounded, [graderName]: rounded };
+    setGraderCalibrationOffsets(updated);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("bsn_grader_calibration_offsets", JSON.stringify(updated));
+    }
+    if (hasSupabaseKeys) {
+      try {
+        await supabase.from("recruitment_settings").upsert({
+          setting_key: "grader_calibration_offsets",
+          setting_value: updated,
+        });
+      } catch (_) {}
+    }
   };
 
   // Manual Assign to Specific Grader Slot (0 = Grader 1, 1 = Grader 2)
