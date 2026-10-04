@@ -332,15 +332,8 @@ export default function ApplicantCard({
                   </span>
                   <span className="text-xs text-slate-400 font-normal">/{maxRubricPoints.toFixed(0)}</span>
                 </div>
-                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center justify-end gap-1">
-                  <span className={isCalibrated ? "text-violet-600 dark:text-violet-400 font-extrabold" : "text-slate-400"}>
-                    {isCalibrated ? "⚡ Fair Score" : "Score"}
-                  </span>
-                  {isCalibrated && applicant.score !== undefined && Math.abs(displayScore - applicant.score) > 0.05 && (
-                    <span className="text-[9px] text-slate-400 font-medium normal-case">
-                      ({displayScore > applicant.score ? `+${(displayScore - applicant.score).toFixed(1)}` : (displayScore - applicant.score).toFixed(1)})
-                    </span>
-                  )}
+                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                  {isCalibrated ? "⚡ Cal Score" : "Score"}
                 </div>
               </div>
             )}
@@ -351,7 +344,7 @@ export default function ApplicantCard({
                   <Award className="h-4 w-4 text-amber-500" /> #{applicant.rank}
                 </div>
                 <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                  {isCalibrated ? "⚡ Fair Rank" : "Raw Rank"}
+                  Rank
                 </div>
               </div>
             )}
