@@ -504,12 +504,29 @@ export default function Dashboard() {
     return {};
   });
 
-  const isCalibratedView = useMemo(() => {
+  const [scoreViewMode, setScoreViewMode] = useState<"raw" | "calibrated">(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("bsn_score_view_mode");
+      if (saved === "raw" || saved === "calibrated") return saved;
+    }
+    return "calibrated";
+  });
+
+  const hasCalibrationOffsets = useMemo(() => {
     return (
       Object.keys(graderCalibrationOffsets).length > 0 &&
       Object.values(graderCalibrationOffsets).some((v) => v !== 0)
     );
   }, [graderCalibrationOffsets]);
+
+  const isCalibratedView = hasCalibrationOffsets && scoreViewMode === "calibrated";
+
+  const handleToggleScoreViewMode = (mode: "raw" | "calibrated") => {
+    setScoreViewMode(mode);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("bsn_score_view_mode", mode);
+    }
+  };
   const [rubricsState, setRubricsState] = useState<Record<RubricKey, RubricConfig>>(RUBRICS);
   const [isEditingRubrics, setIsEditingRubrics] = useState<boolean>(false);
   const [activeRubricBenchmarkPoints, setActiveRubricBenchmarkPoints] = useState<Record<string, string>>({});
@@ -615,6 +632,23 @@ export default function Dashboard() {
               setRubricsState(migrated);
               try {
                 localStorage.setItem("bsn_custom_rubrics", JSON.stringify(migrated));
+              } catch (_) {}
+            }
+          },
+          () => {}
+        );
+
+      supabase
+        .from("recruitment_settings")
+        .select("setting_value")
+        .eq("setting_key", "grader_calibration_offsets")
+        .single()
+        .then(
+          ({ data }) => {
+            if (data && data.setting_value && typeof data.setting_value === "object") {
+              setGraderCalibrationOffsets(data.setting_value);
+              try {
+                localStorage.setItem("bsn_grader_calibration_offsets", JSON.stringify(data.setting_value));
               } catch (_) {}
             }
           },
@@ -2120,42 +2154,46 @@ export default function Dashboard() {
   };
 
   // Statistical Grader Calibration: One-Click Auto-Equalization (After-the-fact)
-  const handleAutoEqualizeGraders = () => {
-    // 1. Find all completed evaluations across the pool
-    const completedApps = applicants.filter(
-      (a) => ["completed", "interview", "group_interview", "offered", "rejected"].includes(a.status) && a.score !== undefined
-    );
+  const handleAutoEqualizeGraders = async () => {
+    // 1. Collect all completed evaluations across the pool (including in_progress and completed)
+    const allCompletedScores: number[] = [];
+    applicants.forEach((app) => {
+      (app.assignedGraders || []).forEach((ag) => {
+        if ((ag.status === "completed" || ag.score !== undefined) && typeof ag.score === "number" && ag.score > 0) {
+          allCompletedScores.push(ag.score);
+        }
+      });
+      if ((!app.assignedGraders || app.assignedGraders.length === 0) && typeof app.score === "number" && app.score > 0) {
+        allCompletedScores.push(app.score);
+      }
+    });
 
-    if (completedApps.length === 0) {
+    if (allCompletedScores.length === 0) {
       showToast("No completed evaluations found yet. Run Auto-Equalize after evaluations have been submitted.", "info");
       return;
     }
 
     // 2. Compute overall cohort benchmark average score
-    const totalPoolScore = completedApps.reduce((acc, a) => acc + (a.score || 0), 0);
-    const overallMean = parseFloat((totalPoolScore / completedApps.length).toFixed(2));
+    const totalPoolScore = allCompletedScores.reduce((acc, s) => acc + s, 0);
+    const overallMean = parseFloat((totalPoolScore / allCompletedScores.length).toFixed(2));
 
     // 3. Compute each grader's specific average score across their graded pool
     const newOffsets: Record<string, number> = {};
     let equalizedCount = 0;
 
-    gradersList.forEach((grader) => {
-      const graderApps = applicants.filter((a) => {
-        const matchesList = a.assignedGraders && a.assignedGraders.some(
-          (ag) => (ag.graderId === grader.id || ag.graderName.toLowerCase() === grader.name.toLowerCase()) && ag.status === "completed" && ag.score !== undefined
-        );
-        const matchesSingle = (a.assignedGraderId === grader.id || a.assignedGraderName?.toLowerCase() === grader.name.toLowerCase()) && a.score !== undefined;
-        return Boolean(matchesList || matchesSingle);
-      });
-
+    gradersList.filter((g) => g.role === "GRADER").forEach((grader) => {
       const scores: number[] = [];
-      graderApps.forEach((a) => {
-        const match = a.assignedGraders?.find(
-          (ag) => (ag.graderId === grader.id || ag.graderName.toLowerCase() === grader.name.toLowerCase()) && ag.status === "completed" && ag.score !== undefined
+      applicants.forEach((a) => {
+        const agMatch = a.assignedGraders?.find(
+          (ag) => (ag.graderId === grader.id || ag.graderName.toLowerCase() === grader.name.toLowerCase()) && (ag.status === "completed" || ag.score !== undefined) && typeof ag.score === "number" && ag.score > 0
         );
-        if (match?.score !== undefined) {
-          scores.push(match.score);
-        } else if (a.score !== undefined) {
+        if (agMatch?.score !== undefined) {
+          scores.push(agMatch.score);
+        } else if (
+          (a.assignedGraderId === grader.id || a.assignedGraderName?.toLowerCase() === grader.name.toLowerCase()) &&
+          typeof a.score === "number" &&
+          a.score > 0
+        ) {
           scores.push(a.score);
         }
       });
@@ -2173,8 +2211,20 @@ export default function Dashboard() {
     });
 
     setGraderCalibrationOffsets(newOffsets);
+    handleToggleScoreViewMode("calibrated");
     if (typeof window !== "undefined") {
       localStorage.setItem("bsn_grader_calibration_offsets", JSON.stringify(newOffsets));
+    }
+
+    if (hasSupabaseKeys) {
+      try {
+        await supabase.from("recruitment_settings").upsert({
+          setting_key: "grader_calibration_offsets",
+          setting_value: newOffsets,
+        });
+      } catch (err) {
+        console.error("Error saving calibration offsets to Supabase:", err);
+      }
     }
 
     showToast(
@@ -2183,22 +2233,39 @@ export default function Dashboard() {
     );
   };
 
-  const handleResetCalibration = () => {
+  const handleResetCalibration = async () => {
     setGraderCalibrationOffsets({});
+    handleToggleScoreViewMode("raw");
     if (typeof window !== "undefined") {
       localStorage.removeItem("bsn_grader_calibration_offsets");
+    }
+    if (hasSupabaseKeys) {
+      try {
+        await supabase.from("recruitment_settings").upsert({
+          setting_key: "grader_calibration_offsets",
+          setting_value: {},
+        });
+      } catch (_) {}
     }
     showToast("Reset all equalizations to raw scores.", "info");
   };
 
-  const handleUpdateGraderOffset = (graderId: string, graderName: string, delta: number) => {
-    setGraderCalibrationOffsets((prev) => {
-      const updated = { ...prev, [graderId]: delta, [graderName]: delta };
-      if (typeof window !== "undefined") {
-        localStorage.setItem("bsn_grader_calibration_offsets", JSON.stringify(updated));
-      }
-      return updated;
-    });
+  const handleUpdateGraderOffset = async (graderId: string, graderName: string, delta: number) => {
+    const rounded = parseFloat(delta.toFixed(1));
+    const updated = { ...graderCalibrationOffsets, [graderId]: rounded, [graderName]: rounded };
+    setGraderCalibrationOffsets(updated);
+    handleToggleScoreViewMode("calibrated");
+    if (typeof window !== "undefined") {
+      localStorage.setItem("bsn_grader_calibration_offsets", JSON.stringify(updated));
+    }
+    if (hasSupabaseKeys) {
+      try {
+        await supabase.from("recruitment_settings").upsert({
+          setting_key: "grader_calibration_offsets",
+          setting_value: updated,
+        });
+      } catch (_) {}
+    }
   };
 
   // Manual Assign to Specific Grader Slot (0 = Grader 1, 1 = Grader 2)
@@ -3414,6 +3481,57 @@ export default function Dashboard() {
     });
   }, [gradersList, applicants, graderCalibrationOffsets]);
 
+  // Dynamically compute rankings across the active pool based on active view mode (Raw vs Fair)
+  const cohortRankMap = useMemo(() => {
+    const isHealthTrack = selectedCohort.toLowerCase().includes("health");
+    const trackApplicants = applicants.filter((app) => {
+      const appIsHealth = (app.cohort || "").toLowerCase().includes("health");
+      if (isHealthTrack !== appIsHealth) return false;
+
+      if (yearFilter !== "all") {
+        const isFreshman =
+          (app.year && app.year.toLowerCase().includes("freshman")) ||
+          (app.cohort && app.cohort.toLowerCase().includes("freshman"));
+        if (yearFilter === "freshman" && !isFreshman) return false;
+        if (yearFilter === "upperclassman" && isFreshman) return false;
+      }
+
+      return true;
+    });
+
+    // Sort by active effective score descending
+    const sorted = [...trackApplicants].sort((a, b) => {
+      const scoreA = getApplicantCalibratedScore(a, isCalibratedView, graderCalibrationOffsets).effectiveScore;
+      const scoreB = getApplicantCalibratedScore(b, isCalibratedView, graderCalibrationOffsets).effectiveScore;
+
+      if (scoreA !== undefined && scoreB !== undefined) {
+        return scoreB - scoreA;
+      }
+      if (scoreA !== undefined) return -1;
+      if (scoreB !== undefined) return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    const rankMap: Record<string, number> = {};
+    let currentRank = 1;
+    let prevScore: number | null = null;
+
+    sorted.forEach((app, index) => {
+      const effScore = getApplicantCalibratedScore(app, isCalibratedView, graderCalibrationOffsets).effectiveScore;
+      if (effScore !== undefined && effScore > 0) {
+        if (prevScore !== null && effScore === prevScore) {
+          rankMap[app.id] = currentRank;
+        } else {
+          currentRank = index + 1;
+          prevScore = effScore;
+          rankMap[app.id] = currentRank;
+        }
+      }
+    });
+
+    return rankMap;
+  }, [applicants, selectedCohort, yearFilter, isCalibratedView, graderCalibrationOffsets]);
+
   // Filter and search applicants
   const filteredApplicants = useMemo(() => {
     return applicants
@@ -3459,10 +3577,14 @@ export default function Dashboard() {
 
         return true;
       })
+      .map((app) => ({
+        ...app,
+        rank: cohortRankMap[app.id] ?? app.rank,
+      }))
       .sort((a, b) => {
-        // Highest score (lowest rank #1) first
+        // Lowest rank number (#1, #2) first
         if (a.rank !== undefined && b.rank !== undefined) {
-          return a.rank - b.rank;
+          if (a.rank !== b.rank) return a.rank - b.rank;
         }
         if (a.rank !== undefined) return -1;
         if (b.rank !== undefined) return 1;
@@ -3489,6 +3611,7 @@ export default function Dashboard() {
     currentUser,
     isCalibratedView,
     graderCalibrationOffsets,
+    cohortRankMap,
   ]);
 
   // LOADING STATE
@@ -3920,7 +4043,49 @@ export default function Dashboard() {
                     </div>
 
                     {/* Filter & Action Controls */}
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                      {/* Score View Mode Switcher: Raw vs Fair */}
+                      <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleScoreViewMode("raw")}
+                          className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                            !isCalibratedView
+                              ? "bg-white text-slate-900 shadow-2xs font-extrabold"
+                              : "text-slate-500 hover:text-slate-800"
+                          }`}
+                          title="View original uncurved raw scores and rankings"
+                        >
+                          <BarChart3 className="h-3.5 w-3.5 text-slate-600" />
+                          <span>Raw Scores</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!hasCalibrationOffsets) {
+                              handleAutoEqualizeGraders();
+                            }
+                            handleToggleScoreViewMode("calibrated");
+                          }}
+                          className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                            isCalibratedView
+                              ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-2xs font-extrabold"
+                              : "text-slate-500 hover:text-slate-800"
+                          }`}
+                          title="View curved fair equalized scores and rankings"
+                        >
+                          <Sparkles className={`h-3.5 w-3.5 ${isCalibratedView ? "text-amber-300" : "text-slate-500"}`} />
+                          <span>⚡ Fair Scores</span>
+                          {hasCalibrationOffsets && (
+                            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                              isCalibratedView ? "bg-white/20 text-white" : "bg-violet-100 text-violet-700"
+                            }`}>
+                              Equalized
+                            </span>
+                          )}
+                        </button>
+                      </div>
+
                       {/* Status Filter */}
                       <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl">
                         <Filter className="h-3.5 w-3.5 text-slate-400 shrink-0" />
@@ -5385,6 +5550,41 @@ Bruin Strategy Network Board`}
 
                   {/* Calibration Action Suite */}
                   <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+                    {/* View Switcher Toggle */}
+                    <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleScoreViewMode("raw")}
+                        className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                          !isCalibratedView
+                            ? "bg-white text-slate-900 shadow-2xs font-extrabold"
+                            : "text-slate-500 hover:text-slate-800"
+                        }`}
+                        title="Show raw uncurved reviewer metrics"
+                      >
+                        <BarChart3 className="h-3.5 w-3.5 text-slate-600" />
+                        <span>Raw View</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!hasCalibrationOffsets) {
+                            handleAutoEqualizeGraders();
+                          }
+                          handleToggleScoreViewMode("calibrated");
+                        }}
+                        className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                          isCalibratedView
+                            ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-2xs font-extrabold"
+                            : "text-slate-500 hover:text-slate-800"
+                        }`}
+                        title="Show fair equalized reviewer metrics"
+                      >
+                        <Sparkles className={`h-3.5 w-3.5 ${isCalibratedView ? "text-amber-300" : "text-slate-500"}`} />
+                        <span>⚡ Fair View</span>
+                      </button>
+                    </div>
+
                     {/* Auto-Equalize Action */}
                     <button
                       type="button"
@@ -5397,14 +5597,14 @@ Bruin Strategy Network Board`}
                     </button>
 
                     {/* Reset Button */}
-                    {isCalibratedView && (
+                    {hasCalibrationOffsets && (
                       <button
                         type="button"
                         onClick={handleResetCalibration}
                         className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all cursor-pointer"
                         title="Reset all calibration adjustments back to zero"
                       >
-                        Reset
+                        Reset Curves
                       </button>
                     )}
                   </div>
@@ -5505,15 +5705,19 @@ Bruin Strategy Network Board`}
                         {/* Metrics Grid */}
                         <div className="grid grid-cols-3 gap-2 text-center text-xs">
                           {/* Raw Average */}
-                          <div className="bg-slate-50 p-2.5 rounded-2xl border border-slate-200">
+                          <div className={`p-2.5 rounded-2xl border transition-all ${
+                            !isCalibratedView
+                              ? "bg-slate-100/90 border-slate-300 ring-2 ring-slate-400/20"
+                              : "bg-slate-50 border-slate-200"
+                          }`}>
                             <span className="text-[9px] font-bold text-slate-500 block uppercase">Raw Avg</span>
                             <span className="text-sm font-black text-slate-800">
                               {grader.averageScore !== null ? grader.averageScore : "—"}
                             </span>
                           </div>
 
-                          {/* Curve Adjustment Delta */}
-                          <div className={`p-2.5 rounded-2xl border ${
+                          {/* Curve Adjustment Delta with Quick Nudge Controls */}
+                          <div className={`p-2.5 rounded-2xl border flex flex-col items-center justify-between ${
                             hasOffset
                               ? grader.offset > 0
                                 ? "bg-amber-50/70 border-amber-200 text-amber-900"
@@ -5521,13 +5725,43 @@ Bruin Strategy Network Board`}
                               : "bg-slate-50 border-slate-200 text-slate-700"
                           }`}>
                             <span className="text-[9px] font-bold block uppercase opacity-80">Curve Offset</span>
-                            <span className="text-sm font-black">
+                            <span className="text-sm font-black my-0.5">
                               {grader.offset > 0 ? `+${grader.offset.toFixed(1)}` : grader.offset < 0 ? `${grader.offset.toFixed(1)}` : "0.0"} pts
                             </span>
+                            {userRole === "ADMIN" && (
+                              <div className="flex items-center gap-1.5 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleUpdateGraderOffset(grader.id, grader.name, grader.offset - 0.5);
+                                  }}
+                                  className="w-5 h-5 flex items-center justify-center rounded-md bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-bold cursor-pointer transition-colors shadow-2xs"
+                                  title="Decrease curve by 0.5 pts"
+                                >
+                                  -
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleUpdateGraderOffset(grader.id, grader.name, grader.offset + 0.5);
+                                  }}
+                                  className="w-5 h-5 flex items-center justify-center rounded-md bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-bold cursor-pointer transition-colors shadow-2xs"
+                                  title="Increase curve by 0.5 pts"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            )}
                           </div>
 
                           {/* Fair Equalized Average */}
-                          <div className="bg-violet-50/70 p-2.5 rounded-2xl border border-violet-200">
+                          <div className={`p-2.5 rounded-2xl border transition-all ${
+                            isCalibratedView
+                              ? "bg-violet-100/90 border-violet-300 ring-2 ring-violet-500/20"
+                              : "bg-violet-50/70 border-violet-200"
+                          }`}>
                             <span className="text-[9px] font-bold text-violet-700 block uppercase">Fair Avg</span>
                             <span className="text-sm font-black text-violet-900">
                               {grader.calibratedAverageScore !== null ? grader.calibratedAverageScore : "—"}
